@@ -75,6 +75,35 @@ Time zone: America/Chicago
 When the agent needs the current time, use the `session_status` tool; the status
 card includes a timestamp line.
 
+### Including time in system prompt (local models)
+
+Local models (Ollama, etc.) may not call `session_status` spontaneously to check
+the current time. For these deployments, enable `includeTimeInPrompt`:
+
+```json5
+{
+  agents: {
+    defaults: {
+      userTimezone: "Europe/Berlin",
+      timeFormat: "24",
+      includeTimeInPrompt: true
+    }
+  }
+}
+```
+
+This adds the current date and time to the system prompt:
+
+```
+## Current Date & Time
+Current time: Wednesday, January 29th, 2026 — 21:30
+Time zone: Europe/Berlin
+```
+
+**Trade-off**: This disables prompt caching optimization for cloud providers
+(the system prompt changes every minute). Only enable for local model deployments
+where prompt caching is not relevant.
+
 ## System event lines (local by default)
 
 Queued system events inserted into agent context are prefixed with a timestamp using the

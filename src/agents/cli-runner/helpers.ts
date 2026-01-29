@@ -270,21 +270,22 @@ export function buildSystemPrompt(params: {
     agentId: params.agentId,
   });
   const defaultModelLabel = `${defaultModelRef.provider}/${defaultModelRef.model}`;
-  const { runtimeInfo, userTimezone, userTime, userTimeFormat } = buildSystemPromptParams({
-    config: params.config,
-    agentId: params.agentId,
-    workspaceDir: params.workspaceDir,
-    cwd: process.cwd(),
-    runtime: {
-      host: "openclaw",
-      os: `${os.type()} ${os.release()}`,
-      arch: os.arch(),
-      node: process.version,
-      model: params.modelDisplay,
-      defaultModel: defaultModelLabel,
-      shell: detectRuntimeShell(),
-    },
-  });
+  const { runtimeInfo, userTimezone, userTime, userTimeFormat, includeTimeInPrompt } =
+    buildSystemPromptParams({
+      config: params.config,
+      agentId: params.agentId,
+      workspaceDir: params.workspaceDir,
+      cwd: process.cwd(),
+      runtime: {
+        host: "openclaw",
+        os: `${os.type()} ${os.release()}`,
+        arch: os.arch(),
+        node: process.version,
+        model: params.modelDisplay,
+        defaultModel: defaultModelLabel,
+        shell: detectRuntimeShell(),
+      },
+    });
   const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
   return buildAgentSystemPrompt({
     workspaceDir: params.workspaceDir,
@@ -300,6 +301,7 @@ export function buildSystemPrompt(params: {
     userTimezone,
     userTime,
     userTimeFormat,
+    includeTimeInPrompt,
     contextFiles: params.contextFiles,
     ttsHint,
     memoryCitationsMode: params.config?.memory?.citations,

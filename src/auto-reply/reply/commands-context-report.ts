@@ -111,20 +111,21 @@ async function resolveContextReport(
     agentId: sessionAgentId,
   });
   const defaultModelLabel = `${defaultModelRef.provider}/${defaultModelRef.model}`;
-  const { runtimeInfo, userTimezone, userTime, userTimeFormat } = buildSystemPromptParams({
-    config: params.cfg,
-    agentId: sessionAgentId,
-    workspaceDir,
-    cwd: process.cwd(),
-    runtime: {
-      host: "unknown",
-      os: "unknown",
-      arch: "unknown",
-      node: process.version,
-      model: `${params.provider}/${params.model}`,
-      defaultModel: defaultModelLabel,
-    },
-  });
+  const { runtimeInfo, userTimezone, userTime, userTimeFormat, includeTimeInPrompt } =
+    buildSystemPromptParams({
+      config: params.cfg,
+      agentId: sessionAgentId,
+      workspaceDir,
+      cwd: process.cwd(),
+      runtime: {
+        host: "unknown",
+        os: "unknown",
+        arch: "unknown",
+        node: process.version,
+        model: `${params.provider}/${params.model}`,
+        defaultModel: defaultModelLabel,
+      },
+    });
   const sandboxInfo = sandboxRuntime.sandboxed
     ? {
         enabled: true,
@@ -151,6 +152,7 @@ async function resolveContextReport(
     userTimezone,
     userTime,
     userTimeFormat,
+    includeTimeInPrompt,
     contextFiles: injectedFiles,
     skillsPrompt,
     heartbeatPrompt: undefined,

@@ -115,6 +115,12 @@ export type AgentDefaultsConfig = {
   /** Time format in system prompt: auto (OS preference), 12-hour, or 24-hour. */
   timeFormat?: "auto" | "12" | "24";
   /**
+   * Include the current date and time in the system prompt (not just timezone).
+   * Useful for local models that don't call session_status spontaneously.
+   * Disables prompt caching optimization when enabled.
+   */
+  includeTimeInPrompt?: boolean;
+  /**
    * Envelope timestamp timezone: "utc" (default), "local", "user", or an IANA timezone string.
    */
   envelopeTimezone?: string;
