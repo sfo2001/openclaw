@@ -42,7 +42,12 @@ import {
   resolveNonEnvSecretRefHeaderValueMarker,
   resolveEnvSecretRefHeaderValueMarker,
 } from "./model-auth-markers.js";
-import { resolveAwsSdkEnvVarName, resolveEnvApiKey } from "./model-auth.js";
+import {
+  resolveAwsSdkEnvVarName,
+  resolveEnvApiKey,
+  resolveVaultProxyUrl,
+  VAULT_PROXY_PLACEHOLDER_KEY,
+} from "./model-auth.js";
 export { resolveOllamaApiBase } from "./models-config.providers.discovery.js";
 export { normalizeGoogleModelId, normalizeXaiModelId };
 
@@ -444,6 +449,7 @@ export function enforceSourceManagedProviderSecrets(params: {
 export function normalizeProviders(params: {
   providers: ModelsConfig["providers"];
   agentDir: string;
+  config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
   secretDefaults?: SecretDefaults;
   sourceProviders?: ModelsConfig["providers"];
@@ -471,6 +477,18 @@ export function normalizeProviders(params: {
       mutated = true;
     }
     let normalizedProvider = provider;
+
+    // Vault proxy mode: rewrite baseUrl and set placeholder apiKey so the
+    // vault sidecar handles credential injection transparently.
+    const vaultProxy = resolveVaultProxyUrl(params.config, normalizedKey);
+    if (vaultProxy) {
+      mutated = true;
+      normalizedProvider = {
+        ...normalizedProvider,
+        baseUrl: vaultProxy,
+        apiKey: VAULT_PROXY_PLACEHOLDER_KEY,
+      };
+    }
     const normalizedHeaders = normalizeHeaderValues({
       headers: normalizedProvider.headers,
       secretDefaults: params.secretDefaults,
@@ -542,11 +560,12 @@ export function normalizeProviders(params: {
 
     // If a provider defines models, pi's ModelRegistry requires apiKey to be set.
     // Fill it from the environment or auth profiles when possible.
+    // Skip when vault proxy is active (apiKey already set to placeholder).
     const hasModels =
       Array.isArray(normalizedProvider.models) && normalizedProvider.models.length > 0;
     const normalizedApiKey = normalizeOptionalSecretInput(normalizedProvider.apiKey);
     const hasConfiguredApiKey = Boolean(normalizedApiKey || normalizedProvider.apiKey);
-    if (hasModels && !hasConfiguredApiKey) {
+    if (!vaultProxy && hasModels && !hasConfiguredApiKey) {
       const authMode =
         normalizedProvider.auth ?? (normalizedKey === "amazon-bedrock" ? "aws-sdk" : undefined);
       if (authMode === "aws-sdk") {

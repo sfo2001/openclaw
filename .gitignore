@@ -137,3 +137,8 @@ docs/superpowers
 
 # Deprecated changelog fragment workflow
 changelog/fragments/
+
+# Vault secrets (plaintext and keys must not be committed)
+vault/vault-key.txt
+vault/secrets.txt
+deploy/.env
