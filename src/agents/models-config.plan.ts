@@ -106,6 +106,7 @@ export async function planOpenClawModelsJson(params: {
     normalizeProviders({
       providers,
       agentDir,
+      config: cfg,
       env,
       secretDefaults: cfg.secrets?.defaults,
       sourceProviders: params.sourceConfigForSecrets?.models?.providers,
