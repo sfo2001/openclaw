@@ -71,6 +71,7 @@ import {
 } from "../secrets/runtime.js";
 import { onSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
+import { fetchVaultChannelTokens } from "../vault/channel-tokens.js";
 import { runSetupWizard } from "../wizard/setup.js";
 import { createAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import { startChannelHealthMonitor } from "./channel-health-monitor.js";
@@ -498,6 +499,7 @@ export async function startGatewayServer(
     activateRuntimeSecrets,
   });
   cfgAtStart = authBootstrap.cfg;
+  await fetchVaultChannelTokens(cfgAtStart, (msg) => log.info(msg));
   if (authBootstrap.generatedToken) {
     if (authBootstrap.persistedGeneratedToken) {
       log.info(

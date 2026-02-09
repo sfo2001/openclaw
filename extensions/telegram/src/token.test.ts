@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../src/config/config.js";
 import { withStateDirEnv } from "../../../src/test-helpers/state-dir-env.js";
+import * as channelTokens from "../../../src/vault/channel-tokens.js";
 import { resolveTelegramToken } from "./token.js";
 import { readTelegramUpdateOffset, writeTelegramUpdateOffset } from "./update-offset-store.js";
 
@@ -25,6 +26,7 @@ describe("resolveTelegramToken", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     for (const dir of tempDirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -218,6 +220,45 @@ describe("resolveTelegramToken", () => {
     expect(() => resolveTelegramToken(cfg)).toThrow(
       /channels\.telegram\.botToken: unresolved SecretRef/i,
     );
+  });
+
+  // --- Vault source tests ---
+
+  it("vault token takes priority over config and env", () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "env-token");
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name) =>
+      name === "TELEGRAM_BOT_TOKEN" ? "vault-token" : undefined,
+    );
+    const cfg = {
+      channels: { telegram: { botToken: "cfg-token" } },
+    } as OpenClawConfig;
+    const res = resolveTelegramToken(cfg);
+    expect(res.token).toBe("vault-token");
+    expect(res.source).toBe("vault");
+  });
+
+  it("falls through when vault token is not set", () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "env-token");
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockReturnValue(undefined);
+    const cfg = {
+      channels: { telegram: { botToken: "cfg-token" } },
+    } as OpenClawConfig;
+    const res = resolveTelegramToken(cfg);
+    expect(res.token).toBe("cfg-token");
+    expect(res.source).toBe("config");
+  });
+
+  it("vault token for non-default account uses uppercase suffix", () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name) =>
+      name === "TELEGRAM_BOT_TOKEN_WORK" ? "vault-work-token" : undefined,
+    );
+    const cfg = {
+      channels: { telegram: {} },
+    } as OpenClawConfig;
+    const res = resolveTelegramToken(cfg, { accountId: "work" });
+    expect(res.token).toBe("vault-work-token");
+    expect(res.source).toBe("vault");
   });
 });
 

@@ -2,8 +2,9 @@ import type { BaseTokenResolution } from "openclaw/plugin-sdk/channel-contract";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/routing";
 import { normalizeResolvedSecretInputString } from "openclaw/plugin-sdk/secret-input";
+import { getVaultChannelToken } from "openclaw/plugin-sdk/vault";
 
-export type DiscordTokenSource = "env" | "config" | "none";
+export type DiscordTokenSource = "vault" | "env" | "config" | "none";
 
 export type DiscordTokenResolution = BaseTokenResolution & {
   source: DiscordTokenSource;
@@ -36,6 +37,15 @@ export function resolveDiscordToken(
     return matchKey ? accounts[matchKey] : undefined;
   };
   const accountCfg = resolveAccountCfg(accountId);
+  // Vault token resolution (highest priority when vault is enabled).
+  const vaultSecretName =
+    accountId === DEFAULT_ACCOUNT_ID
+      ? "DISCORD_BOT_TOKEN"
+      : `DISCORD_BOT_TOKEN_${accountId.toUpperCase()}`;
+  const vaultToken = getVaultChannelToken(vaultSecretName);
+  if (vaultToken) {
+    return { token: normalizeDiscordToken(vaultToken, "vault") ?? "", source: "vault" };
+  }
   const hasAccountToken = Boolean(
     accountCfg &&
     Object.prototype.hasOwnProperty.call(accountCfg as Record<string, unknown>, "token"),

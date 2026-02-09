@@ -89,6 +89,9 @@ if [ -n "$MISSING" ]; then
   echo "WARNING: Proxy requests for these providers will fail with 401 errors." >&2
 fi
 
+# Channel tokens (TELEGRAM_BOT_TOKEN, etc.) are NOT validated here.
+# Missing channel tokens are expected -- not every deployment uses all channels.
+
 # Render nginx config with secrets injected.
 # Explicit variable list prevents envsubst from replacing nginx variables
 # like $http_upgrade, $host, etc.

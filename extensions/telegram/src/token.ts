@@ -3,9 +3,10 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { tryReadSecretFileSync } from "openclaw/plugin-sdk/infra-runtime";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/routing";
 import { normalizeResolvedSecretInputString } from "openclaw/plugin-sdk/secret-input";
+import { getVaultChannelToken } from "openclaw/plugin-sdk/vault";
 import type { TelegramAccountConfig } from "../runtime-api.js";
 
-export type TelegramTokenSource = "env" | "tokenFile" | "config" | "none";
+export type TelegramTokenSource = "vault" | "env" | "tokenFile" | "config" | "none";
 
 export type TelegramTokenResolution = BaseTokenResolution & {
   source: TelegramTokenSource;
@@ -45,6 +46,7 @@ export function resolveTelegramToken(
     accountId !== DEFAULT_ACCOUNT_ID ? accountId : DEFAULT_ACCOUNT_ID,
   );
 
+<<<<<<< HEAD:extensions/telegram/src/token.ts
   // When a non-default accountId is explicitly specified but not found in config,
   // return empty immediately — do NOT fall through to channel-level defaults,
   // which would silently route the message via the wrong bot's token.
@@ -53,6 +55,16 @@ export function resolveTelegramToken(
       `channels.telegram.accounts: unknown accountId "${accountId}" — not found in config, refusing channel-level fallback`,
     );
     return { token: "", source: "none" };
+=======
+  // Vault token resolution (highest priority when vault is enabled).
+  const vaultSecretName =
+    accountId === DEFAULT_ACCOUNT_ID
+      ? "TELEGRAM_BOT_TOKEN"
+      : `TELEGRAM_BOT_TOKEN_${accountId.toUpperCase()}`;
+  const vaultToken = getVaultChannelToken(vaultSecretName);
+  if (vaultToken) {
+    return { token: vaultToken, source: "vault" };
+>>>>>>> 7a89ba7222 (feat(vault): add channel token isolation via HTTP endpoint):src/telegram/token.ts
   }
 
   const accountTokenFile = accountCfg?.tokenFile?.trim();
