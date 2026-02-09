@@ -6,6 +6,7 @@ import { logVerbose } from "../../globals.js";
 import type { RuntimeWebSearchMetadata } from "../../secrets/runtime-web-tools.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { VAULT_PROXY_PLACEHOLDER_KEY, resolveVaultProxyUrl } from "../model-auth.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringArrayParam, readStringParam } from "./common.js";
 import { withTrustedWebToolsEndpoint } from "./web-guarded-fetch.js";
@@ -110,6 +111,13 @@ const BRAVE_SEARCH_LANG_ALIASES: Record<string, string> = {
 };
 const BRAVE_UI_LANG_LOCALE = /^([a-z]{2})-([a-z]{2})$/i;
 const PERPLEXITY_RECENCY_VALUES = new Set(["day", "week", "month", "year"]);
+
+// Maps search provider name -> vault proxy key (provider names differ for grok/xai).
+const SEARCH_VAULT_KEYS: Record<(typeof SEARCH_PROVIDERS)[number], string> = {
+  brave: "brave",
+  grok: "xai",
+  perplexity: "perplexity",
+} as const;
 
 const FRESHNESS_TO_RECENCY: Record<string, string> = {
   pd: "day",
@@ -1253,10 +1261,20 @@ async function runPerplexitySearch(params: {
   model: string;
   timeoutSeconds: number;
   freshness?: string;
+  vaultProxyUrl?: string;
 }): Promise<{ content: string; citations: string[] }> {
-  const baseUrl = params.baseUrl.trim().replace(/\/$/, "");
-  const endpoint = `${baseUrl}/chat/completions`;
-  const model = resolvePerplexityRequestModel(baseUrl, params.model);
+  const base = (params.vaultProxyUrl ?? params.baseUrl).trim().replace(/\/$/, "");
+  const endpoint = `${base}/chat/completions`;
+  const model = resolvePerplexityRequestModel(base, params.model);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://openclaw.ai",
+    "X-Title": "OpenClaw Web Search",
+  };
+  if (!params.vaultProxyUrl) {
+    headers.Authorization = `Bearer ${params.apiKey}`;
+  }
 
   const body: Record<string, unknown> = {
     model,
@@ -1278,12 +1296,7 @@ async function runPerplexitySearch(params: {
       timeoutSeconds: params.timeoutSeconds,
       init: {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${params.apiKey}`,
-          "HTTP-Referer": "https://openclaw.ai",
-          "X-Title": "OpenClaw Web Search",
-        },
+        headers,
         body: JSON.stringify(body),
       },
     },
@@ -1308,6 +1321,7 @@ async function runGrokSearch(params: {
   model: string;
   timeoutSeconds: number;
   inlineCitations: boolean;
+  vaultProxyUrl?: string;
 }): Promise<{
   content: string;
   citations: string[];
@@ -1329,16 +1343,24 @@ async function runGrokSearch(params: {
   // citations are returned automatically when available — we just parse
   // them from the response without requesting them explicitly (#12910).
 
+  const endpoint = params.vaultProxyUrl
+    ? `${params.vaultProxyUrl.replace(/\/$/, "")}/v1/responses`
+    : XAI_API_ENDPOINT;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (!params.vaultProxyUrl) {
+    headers.Authorization = `Bearer ${params.apiKey}`;
+  }
+
   return withTrustedWebSearchEndpoint(
     {
-      url: XAI_API_ENDPOINT,
+      url: endpoint,
       timeoutSeconds: params.timeoutSeconds,
       init: {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${params.apiKey}`,
-        },
+        headers,
         body: JSON.stringify(body),
       },
     },
@@ -1603,6 +1625,7 @@ async function runWebSearch(params: {
   kimiBaseUrl?: string;
   kimiModel?: string;
   braveMode?: "web" | "llm-context";
+  vaultProxyUrl?: string;
 }): Promise<Record<string, unknown>> {
   const effectiveBraveMode = params.braveMode ?? "web";
   const providerSpecificKey =
@@ -1669,6 +1692,7 @@ async function runWebSearch(params: {
       searchBeforeDate: params.dateBefore ? isoToPerplexityDate(params.dateBefore) : undefined,
       maxTokens: params.maxTokens,
       maxTokensPerPage: params.maxTokensPerPage,
+      vaultProxyUrl: params.vaultProxyUrl,
     });
 
     const payload = {
@@ -1695,6 +1719,7 @@ async function runWebSearch(params: {
       model: params.grokModel ?? DEFAULT_GROK_MODEL,
       timeoutSeconds: params.timeoutSeconds,
       inlineCitations: params.grokInlineCitations ?? false,
+      vaultProxyUrl: params.vaultProxyUrl,
     });
 
     const payload = {
@@ -1809,7 +1834,10 @@ async function runWebSearch(params: {
     return payload;
   }
 
-  const url = new URL(BRAVE_SEARCH_ENDPOINT);
+  const braveEndpoint = params.vaultProxyUrl
+    ? `${params.vaultProxyUrl.replace(/\/$/, "")}/res/v1/web/search`
+    : BRAVE_SEARCH_ENDPOINT;
+  const url = new URL(braveEndpoint);
   url.searchParams.set("q", params.query);
   url.searchParams.set("count", String(params.count));
   if (params.country) {
@@ -1834,16 +1862,20 @@ async function runWebSearch(params: {
     url.searchParams.set("freshness", `1970-01-01to${params.dateBefore}`);
   }
 
+  const braveHeaders: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (!params.vaultProxyUrl) {
+    braveHeaders["X-Subscription-Token"] = params.apiKey;
+  }
+
   const mapped = await withTrustedWebSearchEndpoint(
     {
       url: url.toString(),
       timeoutSeconds: params.timeoutSeconds,
       init: {
         method: "GET",
-        headers: {
-          Accept: "application/json",
-          "X-Subscription-Token": params.apiKey,
-        },
+        headers: braveHeaders,
       },
     },
     async (res) => {
@@ -1912,6 +1944,17 @@ export function createWebSearchTool(options?: {
   const braveConfig = resolveBraveConfig(search);
   const braveMode = resolveBraveMode(braveConfig);
 
+  // Resolve vault proxy URLs for search providers.
+  const vaultProxyMap: Partial<Record<(typeof SEARCH_PROVIDERS)[number], string>> = {};
+  if (options?.config?.vault?.enabled) {
+    for (const [searchProvider, vaultKey] of Object.entries(SEARCH_VAULT_KEYS)) {
+      const url = resolveVaultProxyUrl(options.config, vaultKey);
+      if (url) {
+        vaultProxyMap[searchProvider as (typeof SEARCH_PROVIDERS)[number]] = url;
+      }
+    }
+  }
+
   const description =
     provider === "perplexity"
       ? perplexitySchemaTransportHint === "chat_completions"
@@ -1936,12 +1979,15 @@ export function createWebSearchTool(options?: {
       perplexityTransport: provider === "perplexity" ? perplexitySchemaTransportHint : undefined,
     }),
     execute: async (_toolCallId, args) => {
+      const vaultProxyUrl = vaultProxyMap[provider];
+
       // Resolve Perplexity auth/transport lazily at execution time so unrelated providers
       // do not touch Perplexity-only credential surfaces during tool construction.
       const perplexityRuntime =
         provider === "perplexity" ? resolvePerplexityTransport(perplexityConfig) : undefined;
-      const apiKey =
-        provider === "perplexity"
+      const apiKey = vaultProxyUrl
+        ? VAULT_PROXY_PLACEHOLDER_KEY
+        : provider === "perplexity"
           ? perplexityRuntime?.apiKey
           : provider === "grok"
             ? resolveGrokApiKey(grokConfig)
@@ -2186,6 +2232,7 @@ export function createWebSearchTool(options?: {
         kimiBaseUrl: resolveKimiBaseUrl(kimiConfig),
         kimiModel: resolveKimiModel(kimiConfig),
         braveMode,
+        vaultProxyUrl,
       });
       return jsonResult(result);
     },
