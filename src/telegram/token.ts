@@ -2,8 +2,9 @@ import fs from "node:fs";
 import type { OpenClawConfig } from "../config/config.js";
 import type { TelegramAccountConfig } from "../config/types.telegram.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
+import { getVaultChannelToken } from "../vault/channel-tokens.js";
 
-export type TelegramTokenSource = "env" | "tokenFile" | "config" | "none";
+export type TelegramTokenSource = "vault" | "env" | "tokenFile" | "config" | "none";
 
 export type TelegramTokenResolution = {
   token: string;
@@ -43,6 +44,17 @@ export function resolveTelegramToken(
   const accountCfg = resolveAccountCfg(
     accountId !== DEFAULT_ACCOUNT_ID ? accountId : DEFAULT_ACCOUNT_ID,
   );
+
+  // Vault token resolution (highest priority when vault is enabled).
+  const vaultSecretName =
+    accountId === DEFAULT_ACCOUNT_ID
+      ? "TELEGRAM_BOT_TOKEN"
+      : `TELEGRAM_BOT_TOKEN_${accountId.toUpperCase()}`;
+  const vaultToken = getVaultChannelToken(vaultSecretName);
+  if (vaultToken) {
+    return { token: vaultToken, source: "vault" };
+  }
+
   const accountTokenFile = accountCfg?.tokenFile?.trim();
   if (accountTokenFile) {
     if (!fs.existsSync(accountTokenFile)) {

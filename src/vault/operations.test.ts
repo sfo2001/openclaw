@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const isWindows = process.platform === "win32";
 import {
+  VAULT_CHANNEL_DEFAULTS,
   VAULT_PROVIDER_DEFAULTS,
   buildDefaultProxyMap,
+  channelEntryBySecretName,
   decryptVault,
   encryptVault,
   findProviderBySecretName,
   generateKeypair,
+  isChannelTokenSecret,
   parseVaultSecrets,
   providerProxyUrl,
   providerSecretName,
@@ -407,5 +410,92 @@ describe("findProviderBySecretName", () => {
 
   it("returns undefined for unknown secret names", () => {
     expect(findProviderBySecretName("UNKNOWN_KEY")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VAULT_CHANNEL_DEFAULTS
+// ---------------------------------------------------------------------------
+
+describe("VAULT_CHANNEL_DEFAULTS", () => {
+  it("has entries for all four channel tokens", () => {
+    expect(VAULT_CHANNEL_DEFAULTS["telegram:botToken"]).toBeDefined();
+    expect(VAULT_CHANNEL_DEFAULTS["discord:token"]).toBeDefined();
+    expect(VAULT_CHANNEL_DEFAULTS["slack:botToken"]).toBeDefined();
+    expect(VAULT_CHANNEL_DEFAULTS["slack:appToken"]).toBeDefined();
+  });
+
+  it("has correct secret names", () => {
+    expect(VAULT_CHANNEL_DEFAULTS["telegram:botToken"].secretName).toBe("TELEGRAM_BOT_TOKEN");
+    expect(VAULT_CHANNEL_DEFAULTS["discord:token"].secretName).toBe("DISCORD_BOT_TOKEN");
+    expect(VAULT_CHANNEL_DEFAULTS["slack:botToken"].secretName).toBe("SLACK_BOT_TOKEN");
+    expect(VAULT_CHANNEL_DEFAULTS["slack:appToken"].secretName).toBe("SLACK_APP_TOKEN");
+  });
+
+  it("has no duplicate secret names", () => {
+    const names = Object.values(VAULT_CHANNEL_DEFAULTS).map((e) => e.secretName);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("has no overlap with provider secret names", () => {
+    const providerNames = new Set(Object.values(VAULT_PROVIDER_DEFAULTS).map((e) => e.secretName));
+    for (const entry of Object.values(VAULT_CHANNEL_DEFAULTS)) {
+      expect(providerNames.has(entry.secretName)).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isChannelTokenSecret
+// ---------------------------------------------------------------------------
+
+describe("isChannelTokenSecret", () => {
+  it("returns true for known channel token secret names", () => {
+    expect(isChannelTokenSecret("TELEGRAM_BOT_TOKEN")).toBe(true);
+    expect(isChannelTokenSecret("DISCORD_BOT_TOKEN")).toBe(true);
+    expect(isChannelTokenSecret("SLACK_BOT_TOKEN")).toBe(true);
+    expect(isChannelTokenSecret("SLACK_APP_TOKEN")).toBe(true);
+  });
+
+  it("returns false for provider API key secret names", () => {
+    expect(isChannelTokenSecret("OPENAI_API_KEY")).toBe(false);
+    expect(isChannelTokenSecret("ANTHROPIC_API_KEY")).toBe(false);
+  });
+
+  it("returns false for unknown secret names", () => {
+    expect(isChannelTokenSecret("UNKNOWN_TOKEN")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// channelEntryBySecretName
+// ---------------------------------------------------------------------------
+
+describe("channelEntryBySecretName", () => {
+  it("finds entry by secret name", () => {
+    const entry = channelEntryBySecretName("TELEGRAM_BOT_TOKEN");
+    expect(entry).toBeDefined();
+    expect(entry!.channel).toBe("telegram");
+    expect(entry!.tokenField).toBe("botToken");
+  });
+
+  it("finds slack entries", () => {
+    const bot = channelEntryBySecretName("SLACK_BOT_TOKEN");
+    expect(bot).toBeDefined();
+    expect(bot!.channel).toBe("slack");
+    expect(bot!.tokenField).toBe("botToken");
+
+    const app = channelEntryBySecretName("SLACK_APP_TOKEN");
+    expect(app).toBeDefined();
+    expect(app!.channel).toBe("slack");
+    expect(app!.tokenField).toBe("appToken");
+  });
+
+  it("returns undefined for provider secret names", () => {
+    expect(channelEntryBySecretName("OPENAI_API_KEY")).toBeUndefined();
+  });
+
+  it("returns undefined for unknown secret names", () => {
+    expect(channelEntryBySecretName("UNKNOWN")).toBeUndefined();
   });
 });

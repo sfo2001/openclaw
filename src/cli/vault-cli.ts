@@ -19,11 +19,13 @@ import { defaultRuntime } from "../runtime.js";
 import { renderTable } from "../terminal/table.js";
 import { theme } from "../terminal/theme.js";
 import {
+  VAULT_CHANNEL_DEFAULTS,
   buildDefaultProxyMap,
   decryptVault,
   encryptVault,
   findProviderBySecretName,
   generateKeypair,
+  isChannelTokenSecret,
   providerProxyUrl,
   providerSecretName,
   resolveAgeSecretKey,
@@ -197,6 +199,25 @@ export function registerVaultCli(program: Command) {
           rows.push({ Key: "Proxy mappings", Value: "(none)" });
         }
 
+        // Channel token status (check vault.age for stored tokens)
+        let vaultSecrets: Map<string, string> | undefined;
+        if (vaultExists && cfg.vault?.publicKey) {
+          try {
+            const secretKey = await resolveAgeSecretKey(process.env, false);
+            vaultSecrets = await decryptVault(vaultPath, secretKey);
+          } catch {
+            // No secret key available -- skip channel token details
+          }
+        }
+        rows.push({ Key: "Channel tokens", Value: "" });
+        for (const entry of Object.values(VAULT_CHANNEL_DEFAULTS)) {
+          const stored = vaultSecrets?.has(entry.secretName) ?? false;
+          rows.push({
+            Key: `  ${entry.secretName}`,
+            Value: stored ? `stored (endpoint: /tokens/${entry.secretName})` : "not configured",
+          });
+        }
+
         const tableWidth = Math.max(60, (process.stdout.columns ?? 120) - 1);
         defaultRuntime.log(theme.heading("Vault status"));
         defaultRuntime.log(
@@ -247,6 +268,14 @@ export function registerVaultCli(program: Command) {
         await encryptVault(secrets, publicKey, vaultPath);
 
         defaultRuntime.log(`${isUpdate ? "Updated" : "Added"} secret: ${name}`);
+
+        // Channel tokens don't need proxy mappings — gateway fetches via HTTP endpoint
+        if (isChannelTokenSecret(name)) {
+          defaultRuntime.log(
+            "Channel token stored. Gateway will fetch from vault at startup (no proxy mapping needed).",
+          );
+          return;
+        }
 
         // Auto-configure proxy for known providers
         if (opts.proxy !== false) {
@@ -390,11 +419,7 @@ export function registerVaultCli(program: Command) {
       runCommandWithRuntime(defaultRuntime, async () => {
         const snapshot = await readConfigFileSnapshot();
         const cfg = snapshot.config;
-        const providers = cfg.models?.providers;
-        if (!providers || Object.keys(providers).length === 0) {
-          defaultRuntime.log(theme.muted("No providers configured."));
-          return;
-        }
+        const providers = cfg.models?.providers ?? {};
 
         // Collect providers with plaintext apiKey
         const toMigrate: Array<{
@@ -418,18 +443,58 @@ export function registerVaultCli(program: Command) {
           toMigrate.push({ providerName, apiKey, secretName });
         }
 
+        // Collect channel tokens from config using VAULT_CHANNEL_DEFAULTS registry
+        const channelTokensToMigrate: Array<{
+          secretName: string;
+          token: string;
+          configPath: string;
+        }> = [];
+        const channels = cfg.channels;
+        if (channels) {
+          for (const entry of Object.values(VAULT_CHANNEL_DEFAULTS)) {
+            const channelCfg = channels[entry.channel as keyof typeof channels];
+            if (!channelCfg) {
+              continue;
+            }
+            // Base-level token
+            const baseToken = (channelCfg as Record<string, unknown>)[entry.tokenField];
+            if (typeof baseToken === "string" && baseToken.trim()) {
+              channelTokensToMigrate.push({
+                secretName: entry.secretName,
+                token: baseToken.trim(),
+                configPath: `channels.${entry.channel}.${entry.tokenField}`,
+              });
+            }
+            // Account-level tokens
+            const accounts = (channelCfg as Record<string, unknown>).accounts;
+            if (accounts && typeof accounts === "object") {
+              for (const [acctId, acctCfg] of Object.entries(accounts as Record<string, unknown>)) {
+                const acctToken = (acctCfg as Record<string, unknown>)?.[entry.tokenField];
+                if (typeof acctToken === "string" && acctToken.trim()) {
+                  channelTokensToMigrate.push({
+                    secretName: `${entry.secretName}_${acctId.toUpperCase()}`,
+                    token: acctToken.trim(),
+                    configPath: `channels.${entry.channel}.accounts.${acctId}.${entry.tokenField}`,
+                  });
+                }
+              }
+            }
+          }
+        }
+
         // Build default proxy mappings for ALL known providers
         const defaultProxies = buildDefaultProxyMap(opts.proxyHost);
 
-        if (toMigrate.length === 0) {
+        const totalCount = toMigrate.length + channelTokensToMigrate.length;
+        if (totalCount === 0) {
           if (opts.dryRun) {
             defaultRuntime.log(
-              theme.muted("No plaintext API keys found. Default proxy mappings would be written."),
+              theme.muted("No plaintext secrets found. Default proxy mappings would be written."),
             );
             return;
           }
 
-          // No keys to migrate, but still ensure default proxy mappings exist
+          // No secrets to migrate, but still ensure default proxy mappings exist
           const next = {
             ...snapshot.config,
             vault: {
@@ -441,29 +506,47 @@ export function registerVaultCli(program: Command) {
             },
           };
           await writeConfigFile(next);
-          defaultRuntime.log(theme.muted("No plaintext API keys found in provider config."));
+          defaultRuntime.log(theme.muted("No plaintext secrets found in config."));
           defaultRuntime.log("Default proxy mappings updated.");
           return;
         }
 
         // Show summary
         const tableWidth = Math.max(60, (process.stdout.columns ?? 120) - 1);
-        defaultRuntime.log(theme.heading("Migration plan"));
-        defaultRuntime.log(
-          renderTable({
-            width: tableWidth,
-            columns: [
-              { key: "Provider", header: "Provider", minWidth: 14 },
-              { key: "Secret", header: "Secret Name", minWidth: 24 },
-              { key: "Proxy", header: "Proxy URL", minWidth: 24, flex: true },
-            ],
-            rows: toMigrate.map(({ providerName, secretName }) => ({
-              Provider: providerName,
-              Secret: secretName,
-              Proxy: providerProxyUrl(providerName, opts.proxyHost) ?? "(manual setup needed)",
-            })),
-          }).trimEnd(),
-        );
+        if (toMigrate.length > 0) {
+          defaultRuntime.log(theme.heading("Provider API keys"));
+          defaultRuntime.log(
+            renderTable({
+              width: tableWidth,
+              columns: [
+                { key: "Provider", header: "Provider", minWidth: 14 },
+                { key: "Secret", header: "Secret Name", minWidth: 24 },
+                { key: "Proxy", header: "Proxy URL", minWidth: 24, flex: true },
+              ],
+              rows: toMigrate.map(({ providerName, secretName }) => ({
+                Provider: providerName,
+                Secret: secretName,
+                Proxy: providerProxyUrl(providerName, opts.proxyHost) ?? "(manual setup needed)",
+              })),
+            }).trimEnd(),
+          );
+        }
+        if (channelTokensToMigrate.length > 0) {
+          defaultRuntime.log(theme.heading("Channel tokens"));
+          defaultRuntime.log(
+            renderTable({
+              width: tableWidth,
+              columns: [
+                { key: "Config", header: "Config path", minWidth: 30, flex: true },
+                { key: "Secret", header: "Secret Name", minWidth: 24 },
+              ],
+              rows: channelTokensToMigrate.map(({ secretName, configPath }) => ({
+                Config: configPath,
+                Secret: secretName,
+              })),
+            }).trimEnd(),
+          );
+        }
 
         if (opts.dryRun) {
           defaultRuntime.log("");
@@ -500,7 +583,7 @@ export function registerVaultCli(program: Command) {
           secrets = new Map();
         }
 
-        // Add secrets and build proxy mappings (migrated providers override defaults)
+        // Add provider secrets and build proxy mappings
         const proxyMappings: Record<string, string> = { ...defaultProxies };
         for (const { providerName, apiKey, secretName } of toMigrate) {
           secrets.set(secretName, apiKey);
@@ -508,6 +591,11 @@ export function registerVaultCli(program: Command) {
           if (proxyUrl) {
             proxyMappings[providerName] = proxyUrl;
           }
+        }
+
+        // Add channel tokens
+        for (const { secretName, token } of channelTokensToMigrate) {
+          secrets.set(secretName, token);
         }
 
         await encryptVault(secrets, publicKey, vaultPath);
@@ -519,6 +607,16 @@ export function registerVaultCli(program: Command) {
           if (provider && typeof provider === "object") {
             const { apiKey: _, ...rest } = provider as Record<string, unknown>;
             nextProviders[providerName] = rest as typeof provider;
+          }
+        }
+
+        // Remove plaintext channel tokens from config
+        const nextChannels = cfg.channels
+          ? (JSON.parse(JSON.stringify(cfg.channels)) as typeof cfg.channels)
+          : undefined;
+        if (nextChannels) {
+          for (const { configPath } of channelTokensToMigrate) {
+            deleteNestedKey(nextChannels, configPath.replace("channels.", ""));
           }
         }
 
@@ -537,11 +635,15 @@ export function registerVaultCli(program: Command) {
             ...snapshot.config.models,
             providers: nextProviders,
           },
+          ...(nextChannels ? { channels: nextChannels } : {}),
         };
         await writeConfigFile(next);
 
         defaultRuntime.log("");
-        defaultRuntime.log(theme.success(`Migrated ${toMigrate.length} secret(s) to vault.`));
+        for (const { secretName, configPath } of channelTokensToMigrate) {
+          defaultRuntime.log(`Migrated channel token: ${secretName} (removed from ${configPath})`);
+        }
+        defaultRuntime.log(theme.success(`Migrated ${totalCount} secret(s) to vault.`));
         defaultRuntime.log(`Vault file: ${vaultPath}`);
 
         if (printedIdentity) {
@@ -558,4 +660,32 @@ export function registerVaultCli(program: Command) {
         }
       }),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers (internal)
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete a nested key from an object by dot-separated path.
+ * E.g. deleteNestedKey(obj, "telegram.botToken") deletes obj.telegram.botToken.
+ */
+export function deleteNestedKey(obj: Record<string, unknown>, dotPath: string): void {
+  const parts = dotPath.split(".");
+  let current: Record<string, unknown> = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i];
+    if (!key) {
+      return;
+    }
+    const next = current[key];
+    if (!next || typeof next !== "object") {
+      return;
+    }
+    current = next as Record<string, unknown>;
+  }
+  const lastKey = parts[parts.length - 1];
+  if (lastKey) {
+    delete current[lastKey];
+  }
 }

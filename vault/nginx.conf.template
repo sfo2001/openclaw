@@ -37,7 +37,7 @@ http {
     proxy_read_timeout 300s;
     proxy_send_timeout 60s;
 
-    # Health check endpoint
+    # Health check and channel token endpoint
     server {
         listen 5335;
         location /live {
@@ -45,6 +45,27 @@ http {
         }
         location /ready {
             return 200 'ok';
+        }
+
+        # Channel token endpoints — served to the gateway over the internal network.
+        # Tokens are injected via envsubst at startup (same mechanism as API keys).
+        # Each endpoint returns the raw token as text/plain for the gateway to
+        # fetch once at startup and hold in process memory.
+        location = /tokens/TELEGRAM_BOT_TOKEN {
+            default_type text/plain;
+            return 200 '${TELEGRAM_BOT_TOKEN}';
+        }
+        location = /tokens/DISCORD_BOT_TOKEN {
+            default_type text/plain;
+            return 200 '${DISCORD_BOT_TOKEN}';
+        }
+        location = /tokens/SLACK_BOT_TOKEN {
+            default_type text/plain;
+            return 200 '${SLACK_BOT_TOKEN}';
+        }
+        location = /tokens/SLACK_APP_TOKEN {
+            default_type text/plain;
+            return 200 '${SLACK_APP_TOKEN}';
         }
     }
 

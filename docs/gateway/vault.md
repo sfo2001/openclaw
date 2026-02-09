@@ -277,6 +277,58 @@ for providers that have models but no configured API key.
 3. `openclaw vault add <SECRET_NAME> <value>`
 4. Add the proxy mapping: set `vault.proxies.<provider>` in config
 
+## Channel token isolation
+
+Channel credentials (Telegram bot tokens, Discord tokens, Slack tokens) are
+stored in `vault.age` alongside API keys. Unlike model API keys (which use
+reverse proxy header injection), channel tokens are served via HTTP endpoint
+because channel SDKs require tokens in process memory (WebSocket handshakes,
+URL-embedded tokens).
+
+### How it works
+
+1. Channel tokens are stored in `vault.age` using `vault add`
+2. The vault sidecar serves them via HTTP endpoints on port 5335 (internal network only)
+3. The gateway fetches tokens once at startup, stores them in process memory
+4. Channel resolvers read from this in-memory store (highest priority source)
+
+No filesystem, no environment variable exposure in the gateway container.
+
+### Supported channel tokens
+
+| Secret name          | Channel  | Config field                 | Endpoint                         |
+| -------------------- | -------- | ---------------------------- | -------------------------------- |
+| `TELEGRAM_BOT_TOKEN` | Telegram | `channels.telegram.botToken` | `GET /tokens/TELEGRAM_BOT_TOKEN` |
+| `DISCORD_BOT_TOKEN`  | Discord  | `channels.discord.token`     | `GET /tokens/DISCORD_BOT_TOKEN`  |
+| `SLACK_BOT_TOKEN`    | Slack    | `channels.slack.botToken`    | `GET /tokens/SLACK_BOT_TOKEN`    |
+| `SLACK_APP_TOKEN`    | Slack    | `channels.slack.appToken`    | `GET /tokens/SLACK_APP_TOKEN`    |
+
+Multi-account deployments use a `_ACCOUNTID` suffix (e.g. `TELEGRAM_BOT_TOKEN_WORK`).
+
+### Token resolution priority
+
+For each channel, tokens are resolved in this order:
+
+1. Vault (in-memory store, fetched at startup)
+2. Config (`openclaw.json` field)
+3. Environment variable
+
+### Workflow
+
+```bash
+# Store a channel token in the vault
+echo "123456:ABC-DEF" | AGE_SECRET_KEY=<key> openclaw vault add TELEGRAM_BOT_TOKEN --stdin
+
+# Migrate all plaintext tokens from config to vault
+AGE_SECRET_KEY=<key> openclaw vault migrate
+
+# Check status
+openclaw vault status
+```
+
+After migration, the plaintext token is removed from `openclaw.json`. The
+gateway fetches it from the vault sidecar at startup.
+
 ## Non-Docker usage
 
 Without Docker, `vault.age` serves as an encrypted backup of your API keys.

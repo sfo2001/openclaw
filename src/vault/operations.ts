@@ -47,6 +47,52 @@ export const VAULT_PROVIDER_DEFAULTS: Record<string, VaultProviderEntry> = {
 };
 
 // ---------------------------------------------------------------------------
+// Channel token registry — maps channel tokens to vault HTTP endpoints
+// ---------------------------------------------------------------------------
+
+export type VaultChannelTokenEntry = {
+  /** Secret name in vault.age (matches nginx endpoint path). */
+  secretName: string;
+  /** Channel name (telegram, discord, slack). */
+  channel: string;
+  /** Config field that holds the plaintext token (for migration). */
+  tokenField: string;
+};
+
+export const VAULT_CHANNEL_DEFAULTS: Record<string, VaultChannelTokenEntry> = {
+  "telegram:botToken": {
+    secretName: "TELEGRAM_BOT_TOKEN",
+    channel: "telegram",
+    tokenField: "botToken",
+  },
+  "discord:token": {
+    secretName: "DISCORD_BOT_TOKEN",
+    channel: "discord",
+    tokenField: "token",
+  },
+  "slack:botToken": {
+    secretName: "SLACK_BOT_TOKEN",
+    channel: "slack",
+    tokenField: "botToken",
+  },
+  "slack:appToken": {
+    secretName: "SLACK_APP_TOKEN",
+    channel: "slack",
+    tokenField: "appToken",
+  },
+};
+
+/** Check if a secret name is a channel token (not a provider API key). */
+export function isChannelTokenSecret(secretName: string): boolean {
+  return Object.values(VAULT_CHANNEL_DEFAULTS).some((e) => e.secretName === secretName);
+}
+
+/** Look up channel entry by secret name. */
+export function channelEntryBySecretName(secretName: string): VaultChannelTokenEntry | undefined {
+  return Object.values(VAULT_CHANNEL_DEFAULTS).find((e) => e.secretName === secretName);
+}
+
+// ---------------------------------------------------------------------------
 // Vault file path resolution
 // ---------------------------------------------------------------------------
 

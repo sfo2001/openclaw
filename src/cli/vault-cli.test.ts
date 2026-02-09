@@ -892,10 +892,12 @@ describe("vault migrate edge cases", () => {
     const { defaultRuntime } = await import("../runtime.js");
     const logCalls = vi.mocked(defaultRuntime.log).mock.calls.map((c) => c[0]);
     const output = logCalls.join("\n");
-    expect(output).toContain("No providers configured");
+    expect(output).toContain("No plaintext secrets found in config.");
+    expect(output).toContain("Default proxy mappings updated.");
 
+    // Still writes config with default proxy mappings
     const { writeConfigFile } = await import("../config/config.js");
-    expect(writeConfigFile).not.toHaveBeenCalled();
+    expect(writeConfigFile).toHaveBeenCalled();
   });
 
   it("writes default proxy mappings when all keys have sentinel value", async () => {
@@ -920,8 +922,8 @@ describe("vault migrate edge cases", () => {
     const { defaultRuntime } = await import("../runtime.js");
     const logCalls = vi.mocked(defaultRuntime.log).mock.calls.map((c) => c[0]);
     const output = logCalls.join("\n");
-    expect(output).toContain("No plaintext API keys");
-    expect(output).toContain("Default proxy mappings updated");
+    expect(output).toContain("No plaintext secrets found in config.");
+    expect(output).toContain("Default proxy mappings updated.");
 
     // Should still write config with default proxy mappings
     const { writeConfigFile } = await import("../config/config.js");
@@ -1037,5 +1039,159 @@ describe("vault add proxy edge cases", () => {
     const proxyCall = calls.find((c) => c[0]?.vault?.proxies?.openai);
     expect(proxyCall).toBeDefined();
     expect(proxyCall?.[0]?.vault?.proxies?.openai).toBe("http://my-vault:8081");
+  });
+});
+
+describe("vault add channel token", () => {
+  it("prints channel token message and skips proxy auto-config", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+    await program.parseAsync(["node", "test", "vault", "add", "TELEGRAM_BOT_TOKEN", "tg-secret"]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    const logCalls = vi.mocked(defaultRuntime.log).mock.calls.map((c) => c[0]);
+    const output = logCalls.join("\n");
+    expect(output).toContain("Added secret: TELEGRAM_BOT_TOKEN");
+    expect(output).toContain("Channel token stored");
+    expect(output).toContain("no proxy mapping needed");
+
+    // Should NOT call writeConfigFile (no proxy auto-config for channel tokens)
+    const { writeConfigFile } = await import("../config/config.js");
+    expect(writeConfigFile).not.toHaveBeenCalled();
+
+    // Verify token was actually encrypted in vault
+    const secrets = await decryptVault(vaultPath, keypair.identity);
+    expect(secrets.get("TELEGRAM_BOT_TOKEN")).toBe("tg-secret");
+  });
+});
+
+describe("vault migrate channel tokens", () => {
+  it("migrates plaintext channel tokens from config to vault", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+      channels: {
+        telegram: { botToken: "tg-bot-123" },
+        discord: { token: "dc-token-456" },
+        slack: { botToken: "slack-bot-789", appToken: "slack-app-012" },
+      } as OpenClawConfig["channels"],
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+    await program.parseAsync(["node", "test", "vault", "migrate"]);
+
+    // Verify secrets were encrypted in vault
+    const secrets = await decryptVault(vaultPath, keypair.identity);
+    expect(secrets.get("TELEGRAM_BOT_TOKEN")).toBe("tg-bot-123");
+    expect(secrets.get("DISCORD_BOT_TOKEN")).toBe("dc-token-456");
+    expect(secrets.get("SLACK_BOT_TOKEN")).toBe("slack-bot-789");
+    expect(secrets.get("SLACK_APP_TOKEN")).toBe("slack-app-012");
+
+    // Verify config was updated: channel tokens removed
+    const { writeConfigFile } = await import("../config/config.js");
+    expect(writeConfigFile).toHaveBeenCalled();
+    const writtenConfig = vi.mocked(writeConfigFile).mock.calls[0]?.[0];
+    const writtenChannels = writtenConfig?.channels as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    expect(writtenChannels?.telegram?.botToken).toBeUndefined();
+    expect(writtenChannels?.discord?.token).toBeUndefined();
+    expect(writtenChannels?.slack?.botToken).toBeUndefined();
+    expect(writtenChannels?.slack?.appToken).toBeUndefined();
+
+    // Verify log output
+    const { defaultRuntime } = await import("../runtime.js");
+    const logCalls = vi.mocked(defaultRuntime.log).mock.calls.map((c) => c[0]);
+    const output = logCalls.join("\n");
+    expect(output).toContain("Migrated channel token: TELEGRAM_BOT_TOKEN");
+    expect(output).toContain("Migrated channel token: DISCORD_BOT_TOKEN");
+    expect(output).toContain("Migrated channel token: SLACK_BOT_TOKEN");
+    expect(output).toContain("Migrated channel token: SLACK_APP_TOKEN");
+  });
+
+  it("migrates account-level channel tokens", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+      channels: {
+        telegram: {
+          accounts: {
+            work: { botToken: "tg-work-token" },
+          },
+        },
+      } as OpenClawConfig["channels"],
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+    await program.parseAsync(["node", "test", "vault", "migrate"]);
+
+    const secrets = await decryptVault(vaultPath, keypair.identity);
+    expect(secrets.get("TELEGRAM_BOT_TOKEN_WORK")).toBe("tg-work-token");
+
+    const { defaultRuntime } = await import("../runtime.js");
+    const logCalls = vi.mocked(defaultRuntime.log).mock.calls.map((c) => c[0]);
+    const output = logCalls.join("\n");
+    expect(output).toContain("TELEGRAM_BOT_TOKEN_WORK");
+  });
+});
+
+describe("deleteNestedKey", () => {
+  it("deletes a top-level key", async () => {
+    const { deleteNestedKey } = await import("./vault-cli.js");
+    const obj: Record<string, unknown> = { a: 1, b: 2 };
+    deleteNestedKey(obj, "a");
+    expect(obj).toEqual({ b: 2 });
+  });
+
+  it("deletes a deeply nested key", async () => {
+    const { deleteNestedKey } = await import("./vault-cli.js");
+    const obj: Record<string, unknown> = {
+      telegram: { accounts: { work: { botToken: "secret", name: "work-bot" } } },
+    };
+    deleteNestedKey(obj, "telegram.accounts.work.botToken");
+    expect((obj.telegram as Record<string, unknown>).accounts).toEqual({
+      work: { name: "work-bot" },
+    });
+  });
+
+  it("is a no-op when intermediate key is missing", async () => {
+    const { deleteNestedKey } = await import("./vault-cli.js");
+    const obj: Record<string, unknown> = { a: 1 };
+    deleteNestedKey(obj, "x.y.z");
+    expect(obj).toEqual({ a: 1 });
+  });
+
+  it("is a no-op when intermediate is not an object", async () => {
+    const { deleteNestedKey } = await import("./vault-cli.js");
+    const obj: Record<string, unknown> = { a: "string" };
+    deleteNestedKey(obj, "a.b");
+    expect(obj).toEqual({ a: "string" });
+  });
+
+  it("handles empty path segments gracefully", async () => {
+    const { deleteNestedKey } = await import("./vault-cli.js");
+    const obj: Record<string, unknown> = { a: 1 };
+    deleteNestedKey(obj, ".a");
+    // First segment is empty, should bail early
+    expect(obj).toEqual({ a: 1 });
   });
 });

@@ -2,9 +2,10 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { SlackAccountConfig } from "../config/types.js";
 import { normalizeChatType } from "../channels/chat-type.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
+import { getVaultChannelToken } from "../vault/channel-tokens.js";
 import { resolveSlackAppToken, resolveSlackBotToken } from "./token.js";
 
-export type SlackTokenSource = "env" | "config" | "none";
+export type SlackTokenSource = "vault" | "env" | "config" | "none";
 
 export type ResolvedSlackAccount = {
   accountId: string;
@@ -81,14 +82,32 @@ export function resolveSlackAccount(params: {
   const accountEnabled = merged.enabled !== false;
   const enabled = baseEnabled && accountEnabled;
   const allowEnv = accountId === DEFAULT_ACCOUNT_ID;
+
+  // Vault token resolution (highest priority when vault is enabled).
+  const vaultBotSuffix = accountId === DEFAULT_ACCOUNT_ID ? "" : `_${accountId.toUpperCase()}`;
+  const vaultBot = getVaultChannelToken(`SLACK_BOT_TOKEN${vaultBotSuffix}`) ?? undefined;
+  const vaultApp = getVaultChannelToken(`SLACK_APP_TOKEN${vaultBotSuffix}`) ?? undefined;
+
   const envBot = allowEnv ? resolveSlackBotToken(process.env.SLACK_BOT_TOKEN) : undefined;
   const envApp = allowEnv ? resolveSlackAppToken(process.env.SLACK_APP_TOKEN) : undefined;
   const configBot = resolveSlackBotToken(merged.botToken);
   const configApp = resolveSlackAppToken(merged.appToken);
-  const botToken = configBot ?? envBot;
-  const appToken = configApp ?? envApp;
-  const botTokenSource: SlackTokenSource = configBot ? "config" : envBot ? "env" : "none";
-  const appTokenSource: SlackTokenSource = configApp ? "config" : envApp ? "env" : "none";
+  const botToken = vaultBot ?? configBot ?? envBot;
+  const appToken = vaultApp ?? configApp ?? envApp;
+  const botTokenSource: SlackTokenSource = vaultBot
+    ? "vault"
+    : configBot
+      ? "config"
+      : envBot
+        ? "env"
+        : "none";
+  const appTokenSource: SlackTokenSource = vaultApp
+    ? "vault"
+    : configApp
+      ? "config"
+      : envApp
+        ? "env"
+        : "none";
 
   return {
     accountId,

@@ -46,6 +46,7 @@ import { startDiagnosticHeartbeat, stopDiagnosticHeartbeat } from "../logging/di
 import { createSubsystemLogger, runtimeForLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner, runGlobalGatewayStopSafely } from "../plugins/hook-runner-global.js";
 import { getTotalQueueSize } from "../process/command-queue.js";
+import { fetchVaultChannelTokens } from "../vault/channel-tokens.js";
 import { runOnboardingWizard } from "../wizard/onboarding.js";
 import { createAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import { startGatewayConfigReloader } from "./config-reload.js";
@@ -227,6 +228,7 @@ export async function startGatewayServer(
   }
 
   const cfgAtStart = loadConfig();
+  await fetchVaultChannelTokens(cfgAtStart, (msg) => log.info(msg));
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();

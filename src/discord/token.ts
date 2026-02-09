@@ -1,7 +1,8 @@
 import type { OpenClawConfig } from "../config/config.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
+import { getVaultChannelToken } from "../vault/channel-tokens.js";
 
-export type DiscordTokenSource = "env" | "config" | "none";
+export type DiscordTokenSource = "vault" | "env" | "config" | "none";
 
 export type DiscordTokenResolution = {
   token: string;
@@ -29,6 +30,16 @@ export function resolveDiscordToken(
     accountId !== DEFAULT_ACCOUNT_ID
       ? discordCfg?.accounts?.[accountId]
       : discordCfg?.accounts?.[DEFAULT_ACCOUNT_ID];
+  // Vault token resolution (highest priority when vault is enabled).
+  const vaultSecretName =
+    accountId === DEFAULT_ACCOUNT_ID
+      ? "DISCORD_BOT_TOKEN"
+      : `DISCORD_BOT_TOKEN_${accountId.toUpperCase()}`;
+  const vaultToken = getVaultChannelToken(vaultSecretName);
+  if (vaultToken) {
+    return { token: normalizeDiscordToken(vaultToken) ?? "", source: "vault" };
+  }
+
   const accountToken = normalizeDiscordToken(accountCfg?.token ?? undefined);
   if (accountToken) {
     return { token: accountToken, source: "config" };

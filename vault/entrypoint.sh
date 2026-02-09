@@ -69,16 +69,20 @@ if [ -n "$MISSING" ]; then
   echo "WARNING: Proxy requests for these providers will fail with 401 errors." >&2
 fi
 
+# Channel tokens (TELEGRAM_BOT_TOKEN, etc.) are NOT validated here.
+# Missing channel tokens are expected -- not every deployment uses all channels.
+
 # Render nginx config with secrets injected.
 # Explicit variable list prevents envsubst from replacing nginx variables
 # like $http_upgrade, $host, etc.
-envsubst '${OPENAI_API_KEY} ${ANTHROPIC_API_KEY} ${DEEPGRAM_API_KEY} ${OPENAI_COMPAT_API_KEY} ${GEMINI_API_KEY} ${GROQ_API_KEY} ${XAI_API_KEY} ${MISTRAL_API_KEY} ${BRAVE_API_KEY} ${PERPLEXITY_API_KEY}' \
+envsubst '${OPENAI_API_KEY} ${ANTHROPIC_API_KEY} ${DEEPGRAM_API_KEY} ${OPENAI_COMPAT_API_KEY} ${GEMINI_API_KEY} ${GROQ_API_KEY} ${XAI_API_KEY} ${MISTRAL_API_KEY} ${BRAVE_API_KEY} ${PERPLEXITY_API_KEY} ${TELEGRAM_BOT_TOKEN} ${DISCORD_BOT_TOKEN} ${SLACK_BOT_TOKEN} ${SLACK_APP_TOKEN}' \
   < "$TEMPLATE" \
   > "$SECRETS_DIR/nginx.conf"
 
 # Wipe plaintext secrets (now embedded in rendered nginx.conf on tmpfs)
 rm -f "$SECRETS_DIR/env"
 unset OPENAI_API_KEY ANTHROPIC_API_KEY DEEPGRAM_API_KEY OPENAI_COMPAT_API_KEY GEMINI_API_KEY GROQ_API_KEY XAI_API_KEY MISTRAL_API_KEY BRAVE_API_KEY PERPLEXITY_API_KEY
+unset TELEGRAM_BOT_TOKEN DISCORD_BOT_TOKEN SLACK_BOT_TOKEN SLACK_APP_TOKEN
 
 # Lock down rendered config (contains plaintext secrets).
 chmod 0400 "$SECRETS_DIR/nginx.conf"
