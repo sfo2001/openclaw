@@ -28,6 +28,7 @@ import type { PluginsConfig } from "./types.plugins.js";
 import type { SecretsConfig } from "./types.secrets.js";
 import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
+import type { VaultConfig } from "./types.vault.js";
 
 export type OpenClawConfig = {
   meta?: {
@@ -122,6 +123,7 @@ export type OpenClawConfig = {
   gateway?: GatewayConfig;
   memory?: MemoryConfig;
   mcp?: McpConfig;
+  vault?: VaultConfig;
 };
 
 export type ConfigValidationIssue = {

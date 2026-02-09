@@ -1,6 +1,10 @@
 import type { OpenClawConfig } from "../config/config.js";
 import { ensureAuthProfileStore } from "./auth-profiles/store.js";
 import {
+  VAULT_PROXY_PLACEHOLDER_KEY,
+  resolveVaultProxyUrl,
+} from "./model-auth.js";
+import {
   normalizeProviderSpecificConfig,
   resolveProviderConfigApiKeyResolver,
 } from "./models-config.providers.policy.js";
@@ -19,6 +23,7 @@ type ModelsConfig = NonNullable<OpenClawConfig["models"]>;
 export function normalizeProviders(params: {
   providers: ModelsConfig["providers"];
   agentDir: string;
+  config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
   secretDefaults?: SecretDefaults;
   sourceProviders?: ModelsConfig["providers"];
@@ -54,6 +59,19 @@ export function normalizeProviders(params: {
       mutated = true;
     }
     let normalizedProvider = provider;
+
+    // Vault proxy mode: rewrite baseUrl and set placeholder apiKey so the
+    // vault sidecar handles credential injection transparently.
+    const vaultProxy = resolveVaultProxyUrl(params.config, normalizedKey);
+    if (vaultProxy) {
+      mutated = true;
+      normalizedProvider = {
+        ...normalizedProvider,
+        baseUrl: vaultProxy,
+        apiKey: VAULT_PROXY_PLACEHOLDER_KEY,
+      };
+    }
+
     const normalizedHeaders = normalizeHeaderValues({
       headers: normalizedProvider.headers,
       secretDefaults: params.secretDefaults,
@@ -89,7 +107,9 @@ export function normalizeProviders(params: {
       normalizedProvider = providerWithResolvedEnvApiKey;
     }
 
+    // Skip apiKey fill when vault proxy is active (apiKey already set to placeholder).
     const needsProfileApiKey =
+      !vaultProxy &&
       Array.isArray(normalizedProvider.models) &&
       normalizedProvider.models.length > 0 &&
       !(

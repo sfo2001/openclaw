@@ -140,3 +140,8 @@ changelog/fragments/
 
 # Local scratch workspace
 .tmp/
+
+# Vault secrets (plaintext and keys must not be committed)
+vault/vault-key.txt
+vault/secrets.txt
+deploy/.env
