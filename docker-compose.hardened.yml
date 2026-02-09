@@ -1,0 +1,64 @@
+# Hardened OpenClaw deployment for isolated Ollama-only operation
+# See docs/gateway/hardening.md for full documentation
+#
+# Prerequisites:
+#   1. Build sandbox image: ./scripts/sandbox-setup.sh
+#   2. Build main image: docker build -t openclaw:local .
+#   3. Resolve matrix IP and update extra_hosts below
+#   4. Copy config: mkdir -p ./config && cp ~/.openclaw/openclaw.json ./config/
+#   5. Apply firewall: ./setup-openclaw-firewall.sh
+#
+# Usage:
+#   MATRIX_IP=$(getent hosts matrix | awk '{print $1}')
+#   sed -i "s/MATRIX_IP_HERE/$MATRIX_IP/" docker-compose.hardened.yml
+#   docker compose -f docker-compose.hardened.yml up -d
+
+services:
+  openclaw-gateway:
+    image: openclaw:local
+    container_name: openclaw-hardened
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OLLAMA_API_KEY: "ollama-local"
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+    volumes:
+      - ./config/openclaw.json:/config/openclaw.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ~/clawd:/home/node/clawd
+      # Workaround: bundler flattens paths, so mount docs at expected location
+      - ./docs:/docs:ro
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev,mode=1777
+      - /home/node/.openclaw:size=256m,uid=1000,gid=1000,mode=700
+      - /home/node/.clawdbot:size=256m,uid=1000,gid=1000,mode=700
+    networks:
+      - openclaw-isolated
+    extra_hosts:
+      - "matrix:192.168.178.159"
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    ports:
+      - "127.0.0.1:18790:18789"
+    init: true
+    restart: "no"
+    command: ["node", "dist/index.mjs", "gateway", "--bind", "lan", "--port", "18789"]
+
+networks:
+  openclaw-isolated:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
