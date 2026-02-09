@@ -1,0 +1,77 @@
+# OpenClaw deployment for Unraid (TARDIS)
+# Pulls from private registry at 192.168.178.72:5000
+#
+# Prerequisites:
+#   1. Configure Docker insecure registry: {"insecure-registries": ["192.168.178.72:5000"]}
+#   2. Copy config to /mnt/user/appdata/openclaw/config/openclaw.json
+#   3. Copy docs to /mnt/user/appdata/openclaw/docs/
+#   4. Create home directory with gitconfig (see README.md)
+#   5. Verify NFS mount at /mnt/remotes/192.168.178.71_openclaw
+#
+# Network note:
+#   The container runs on br0 (ipvlan) and gets a real LAN IP. Ipvlan
+#   containers cannot reach their own host, so a post-start script
+#   attaches the default bridge network to enable host.docker.internal.
+#   See: User Scripts > openclaw-bridge-network (runs at array startup)
+#
+# Usage:
+#   docker-compose -f docker-compose.unraid.yml pull
+#   docker-compose -f docker-compose.unraid.yml up -d
+#   docker network connect bridge OpenClaw   # if not using User Scripts
+
+services:
+  openclaw-gateway:
+    image: 192.168.178.72:5000/openclaw-hardened:latest
+    container_name: OpenClaw
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OLLAMA_API_KEY: "ollama-local"
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      BRAVE_API_KEY: "${BRAVE_API_KEY}"
+      HA_URL: "${HA_URL:-http://host.docker.internal:8123}"
+      HA_TOKEN: "${HA_TOKEN}"
+    volumes:
+      # Writable home directory (contains .gitconfig, .openclaw state)
+      - /mnt/user/appdata/openclaw/home:/home/node
+      # Workspace via NFS mount (overlays into home)
+      - /mnt/remotes/192.168.178.71_openclaw:/home/node/clawd
+      # Docs for bundler path resolution (overlays into home)
+      - /mnt/user/appdata/openclaw/docs:/home/node/docs:ro
+      # Config directory (Unraid appdata) - rw needed for wizard/doctor
+      - /mnt/user/appdata/openclaw/config:/config
+      # Docker socket for sandbox spawning
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev,mode=1777
+    networks:
+      - br0
+    extra_hosts:
+      # Unraid host via bridge network (ipvlan cannot reach own host).
+      # Requires bridge network attached post-start (see network note above).
+      - "host.docker.internal:host-gateway"
+      # Ollama host (Matrix server)
+      - "matrix:192.168.178.159"
+      # Gitea server
+      - "gitea:192.168.178.3"
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    init: true
+    restart: unless-stopped
+    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+
+networks:
+  br0:
+    external: true

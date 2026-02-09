@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>OpenClaw</Name>
+  <Repository>localhost:5000/openclaw-hardened:latest</Repository>
+  <Registry>http://localhost:5000/</Registry>
+  <Network>br0</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project>https://github.com/openclaw/openclaw</Project>
+  <Overview>OpenClaw - AI assistant gateway with local Ollama integration. Hardened deployment for isolated operation with Mistral, Cogito, and other local models.&#xD;&#xD;Connects to Ollama on Matrix server for local LLM inference. Includes web search via Brave API and sandboxed code execution.&#xD;&#xD;Setup: Create /mnt/user/appdata/openclaw/home with .gitconfig before starting. See README for details.</Overview>
+  <Category>Productivity: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:18790]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/openclaw/openclaw/main/docs/images/logo.png</Icon>
+  <ExtraParams>--init --read-only --security-opt=no-new-privileges:true --cap-drop=ALL --add-host=matrix:192.168.178.159 --add-host=gitea:192.168.178.3 --dns=1.1.1.1 --dns=1.0.0.1 --tmpfs /tmp:size=128m,noexec,nosuid,nodev,mode=1777 --memory=2g --cpus=2</ExtraParams>
+  <PostArgs>node dist/index.js gateway --bind lan --port 18789</PostArgs>
+  <CPUset/>
+  <DateInstalled></DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Ollama running on Matrix server (192.168.178.159:11434). NFS mount at /mnt/remotes/192.168.178.71_openclaw. Local Docker registry at localhost:5000. Writable home directory at /mnt/user/appdata/openclaw/home with .gitconfig.</Requires>
+  <Config Name="Gateway Port" Target="18789" Default="18790" Mode="tcp" Description="OpenClaw Gateway API and Control UI port" Type="Port" Display="always" Required="true" Mask="false">18790</Config>
+  <Config Name="Home Directory" Target="/home/node" Default="/mnt/user/appdata/openclaw/home" Mode="rw" Description="Writable home directory (contains .gitconfig, .openclaw state). Must be owned by UID 1000." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/openclaw/home</Config>
+  <Config Name="Workspace" Target="/home/node/clawd" Default="/mnt/remotes/192.168.178.71_openclaw" Mode="rw" Description="Agent workspace directory (NFS mount). Must be owned by UID 1000." Type="Path" Display="always" Required="true" Mask="false">/mnt/remotes/192.168.178.71_openclaw</Config>
+  <Config Name="Docs Directory" Target="/home/node/docs" Default="/mnt/user/appdata/openclaw/docs" Mode="ro" Description="OpenClaw documentation directory" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/openclaw/docs</Config>
+  <Config Name="Config Directory" Target="/config" Default="/mnt/user/appdata/openclaw/config" Mode="rw" Description="OpenClaw configuration directory (rw for wizard/doctor)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/openclaw/config</Config>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="ro" Description="Docker socket for sandbox container spawning" Type="Path" Display="advanced" Required="true" Mask="false">/var/run/docker.sock</Config>
+  <Config Name="BRAVE_API_KEY" Target="BRAVE_API_KEY" Default="" Mode="" Description="Brave Search API key for web search tool (optional)" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="HOME" Target="HOME" Default="/home/node" Mode="" Description="Container home directory" Type="Variable" Display="advanced" Required="false" Mask="false">/home/node</Config>
+  <Config Name="TERM" Target="TERM" Default="xterm-256color" Mode="" Description="Terminal type for CLI output" Type="Variable" Display="advanced" Required="false" Mask="false">xterm-256color</Config>
+  <Config Name="OLLAMA_API_KEY" Target="OLLAMA_API_KEY" Default="ollama-local" Mode="" Description="Ollama API key (placeholder for local server)" Type="Variable" Display="advanced" Required="false" Mask="false">ollama-local</Config>
+  <Config Name="OPENCLAW_CONFIG_PATH" Target="OPENCLAW_CONFIG_PATH" Default="/config/openclaw.json" Mode="" Description="Config file path inside container" Type="Variable" Display="advanced" Required="false" Mask="false">/config/openclaw.json</Config>
+  <Config Name="OPENCLAW_STATE_DIR" Target="OPENCLAW_STATE_DIR" Default="/home/node/.openclaw" Mode="" Description="State directory inside container (tmpfs)" Type="Variable" Display="advanced" Required="false" Mask="false">/home/node/.openclaw</Config>
+</Container>

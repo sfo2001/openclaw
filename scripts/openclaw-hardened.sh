@@ -97,8 +97,6 @@ check_config() {
         mkdir -p "$(dirname "$CONFIG_FILE")"
         if [[ -f ~/.openclaw/openclaw.json ]]; then
             cp ~/.openclaw/openclaw.json "$CONFIG_FILE"
-        elif [[ -f ~/.clawdbot/openclaw.json ]]; then
-            cp ~/.clawdbot/openclaw.json "$CONFIG_FILE"
         else
             log_error "No config file found. Create ~/.openclaw/openclaw.json first"
             exit 1
@@ -120,7 +118,7 @@ ensure_container_running() {
         # Wait for health
         local retries=10
         while ((retries > 0)); do
-            if docker exec "$CONTAINER_NAME" node dist/index.mjs gateway health &>/dev/null; then
+            if docker exec "$CONTAINER_NAME" node dist/index.js gateway health &>/dev/null; then
                 log_info "Gateway is ready"
                 return 0
             fi
@@ -182,17 +180,17 @@ apply_firewall() {
 
 gateway_health() {
     ensure_container_running
-    docker exec "$CONTAINER_NAME" node dist/index.mjs gateway health
+    docker exec "$CONTAINER_NAME" node dist/index.js gateway health
 }
 
 gateway_status() {
     ensure_container_running
-    docker exec "$CONTAINER_NAME" node dist/index.mjs status
+    docker exec "$CONTAINER_NAME" node dist/index.js status
 }
 
 list_models() {
     ensure_container_running
-    docker exec "$CONTAINER_NAME" node dist/index.mjs models list
+    docker exec "$CONTAINER_NAME" node dist/index.js models list
 }
 
 send_message() {
@@ -203,12 +201,12 @@ send_message() {
     docker exec -it \
         -e "OPENCLAW_GATEWAY_TOKEN=$GATEWAY_TOKEN" \
         "$CONTAINER_NAME" \
-        node dist/index.mjs agent --agent main --message "$message"
+        node dist/index.js agent --agent main --message "$message"
 }
 
 list_devices() {
     ensure_container_running
-    docker exec "$CONTAINER_NAME" node dist/index.mjs devices list
+    docker exec "$CONTAINER_NAME" node dist/index.js devices list
 }
 
 pair_approve() {
@@ -218,7 +216,7 @@ pair_approve() {
 
     if [[ -z "$request_id" ]]; then
         # Get first pending request ID
-        request_id=$(docker exec "$CONTAINER_NAME" node dist/index.mjs devices list --json 2>/dev/null \
+        request_id=$(docker exec "$CONTAINER_NAME" node dist/index.js devices list --json 2>/dev/null \
             | jq -r '.pending[0].requestId // empty' 2>/dev/null)
 
         if [[ -z "$request_id" ]]; then
@@ -228,7 +226,7 @@ pair_approve() {
         log_info "Auto-selecting first pending request: $request_id"
     fi
 
-    docker exec "$CONTAINER_NAME" node dist/index.mjs devices approve "$request_id"
+    docker exec "$CONTAINER_NAME" node dist/index.js devices approve "$request_id"
     log_info "Device pairing approved"
 }
 
