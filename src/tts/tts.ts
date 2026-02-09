@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -54,6 +55,20 @@ const DEFAULT_OPENAI_VOICE = "alloy";
 const DEFAULT_EDGE_VOICE = "en-US-MichelleNeural";
 const DEFAULT_EDGE_LANG = "en-US";
 const DEFAULT_EDGE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
+
+const PIPER_DEFAULTS = {
+  binaryPath: "piper",
+  sampleRate: 22050,
+  lengthScale: 1.0,
+  sentenceSilence: 0.2,
+  speaker: 0,
+};
+
+/** Hard limit on buffered audio data from piper/ffmpeg subprocesses (100 MB). */
+const MAX_AUDIO_BUFFER_BYTES = 100 * 1024 * 1024;
+
+/** Hard limit on buffered stderr from subprocesses (4 KB). */
+const MAX_STDERR_BYTES = 4096;
 
 const DEFAULT_ELEVENLABS_VOICE_SETTINGS = {
   stability: 0.5,
@@ -126,6 +141,16 @@ export type ResolvedTtsConfig = {
     saveSubtitles: boolean;
     proxy?: string;
     timeoutMs?: number;
+  };
+  piper: {
+    binaryPath: string;
+    modelPath?: string;
+    configPath?: string;
+    sampleRate: number;
+    lengthScale: number;
+    sentenceSilence: number;
+    useCuda: boolean;
+    speaker: number;
   };
   prefsPath?: string;
   maxTextLength: number;
@@ -301,6 +326,16 @@ export function resolveTtsConfig(cfg: OpenClawConfig): ResolvedTtsConfig {
       proxy: raw.edge?.proxy?.trim() || undefined,
       timeoutMs: raw.edge?.timeoutMs,
     },
+    piper: {
+      binaryPath: raw.piper?.binaryPath?.trim() || PIPER_DEFAULTS.binaryPath,
+      modelPath: raw.piper?.modelPath?.trim() || undefined,
+      configPath: raw.piper?.configPath?.trim() || undefined,
+      sampleRate: raw.piper?.sampleRate ?? PIPER_DEFAULTS.sampleRate,
+      lengthScale: raw.piper?.lengthScale ?? PIPER_DEFAULTS.lengthScale,
+      sentenceSilence: raw.piper?.sentenceSilence ?? PIPER_DEFAULTS.sentenceSilence,
+      useCuda: raw.piper?.useCuda ?? false,
+      speaker: raw.piper?.speaker ?? PIPER_DEFAULTS.speaker,
+    },
     prefsPath: raw.prefsPath,
     maxTextLength: raw.maxTextLength ?? DEFAULT_MAX_TEXT_LENGTH,
     timeoutMs: raw.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -439,6 +474,9 @@ export function getTtsProvider(config: ResolvedTtsConfig, prefsPath: string): Tt
   if (resolveTtsApiKey(config, "elevenlabs")) {
     return "elevenlabs";
   }
+  if (config.piper.modelPath) {
+    return "piper";
+  }
   return "edge";
 }
 
@@ -506,7 +544,7 @@ export function resolveTtsApiKey(
   return undefined;
 }
 
-export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge"] as const;
+export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge", "piper"] as const;
 
 export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
   return [primary, ...TTS_PROVIDERS.filter((provider) => provider !== primary)];
@@ -516,7 +554,233 @@ export function isTtsProviderConfigured(config: ResolvedTtsConfig, provider: Tts
   if (provider === "edge") {
     return config.edge.enabled;
   }
+  if (provider === "piper") {
+    return Boolean(config.piper.modelPath);
+  }
   return Boolean(resolveTtsApiKey(config, provider));
+}
+
+async function convertPcmToFormat(
+  pcm: Buffer,
+  sampleRate: number,
+  format: "wav" | "mp3" | "opus",
+  timeoutMs: number,
+): Promise<Buffer> {
+  const formatArgs: Record<string, string[]> = {
+    wav: ["-f", "wav"],
+    mp3: ["-f", "mp3", "-b:a", "128k"],
+    opus: ["-f", "ogg", "-c:a", "libopus", "-b:a", "64k"],
+  };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = <T>(fn: (v: T) => void, value: T) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      fn(value);
+    };
+
+    const args = [
+      "-f",
+      "s16le",
+      "-ar",
+      String(sampleRate),
+      "-ac",
+      "1",
+      "-i",
+      "pipe:0",
+      ...formatArgs[format],
+      "pipe:1",
+    ];
+
+    const ffmpeg = spawn("ffmpeg", args);
+
+    const timer = setTimeout(() => {
+      try {
+        ffmpeg.kill();
+      } catch {
+        /* already exited */
+      }
+      settle(reject, new Error("ffmpeg audio conversion timed out"));
+    }, timeoutMs);
+
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let stderr = "";
+
+    ffmpeg.stdout.on("data", (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_AUDIO_BUFFER_BYTES) {
+        clearTimeout(timer);
+        try {
+          ffmpeg.kill();
+        } catch {
+          /* already exited */
+        }
+        settle(reject, new Error("ffmpeg output exceeded maximum buffer size"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    ffmpeg.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < MAX_STDERR_BYTES) {
+        stderr += chunk.toString().slice(0, MAX_STDERR_BYTES - stderr.length);
+      }
+    });
+
+    ffmpeg.on("error", (err) => {
+      clearTimeout(timer);
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        settle(
+          reject,
+          new Error(
+            "ffmpeg not found. Piper TTS requires ffmpeg to convert audio. " +
+              "Install ffmpeg: https://ffmpeg.org/download.html",
+          ),
+        );
+      } else {
+        settle(reject, new Error(`Failed to run ffmpeg: ${err.message}`));
+      }
+    });
+
+    ffmpeg.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        logVerbose(`ffmpeg stderr: ${stderr.slice(0, 500)}`);
+        settle(reject, new Error(`ffmpeg exited with code ${code}`));
+        return;
+      }
+      settle(resolve, Buffer.concat(chunks));
+    });
+
+    ffmpeg.stdin.write(pcm);
+    ffmpeg.stdin.end();
+  });
+}
+
+async function piperTTS(params: {
+  text: string;
+  config: ResolvedTtsConfig["piper"];
+  outputFormat: "wav" | "mp3" | "opus";
+  timeoutMs: number;
+}): Promise<Buffer> {
+  const { text, config, outputFormat, timeoutMs } = params;
+
+  if (!config.modelPath) {
+    throw new Error("Piper TTS requires modelPath to be configured");
+  }
+
+  const args = [
+    "--model",
+    config.modelPath,
+    "--output-raw",
+    "--length-scale",
+    String(config.lengthScale),
+    "--sentence-silence",
+    String(config.sentenceSilence),
+  ];
+
+  if (config.configPath) {
+    args.push("--config", config.configPath);
+  }
+  if (config.speaker !== undefined && config.speaker !== 0) {
+    args.push("--speaker", String(config.speaker));
+  }
+  if (config.useCuda) {
+    args.push("--cuda");
+  }
+
+  logVerbose(
+    `Piper TTS: ${config.binaryPath} ${args.join(" ")} (format=${outputFormat}, timeout=${timeoutMs}ms)`,
+  );
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = <T>(fn: (v: T) => void, value: T) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      fn(value);
+    };
+
+    const startTime = Date.now();
+    const piper = spawn(config.binaryPath, args);
+
+    const timer = setTimeout(() => {
+      try {
+        piper.kill();
+      } catch {
+        /* already exited */
+      }
+      settle(reject, new Error("Piper TTS timed out"));
+    }, timeoutMs);
+
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let stderr = "";
+
+    piper.stdout.on("data", (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_AUDIO_BUFFER_BYTES) {
+        clearTimeout(timer);
+        try {
+          piper.kill();
+        } catch {
+          /* already exited */
+        }
+        settle(reject, new Error("Piper output exceeded maximum buffer size"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    piper.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < MAX_STDERR_BYTES) {
+        stderr += chunk.toString().slice(0, MAX_STDERR_BYTES - stderr.length);
+      }
+    });
+
+    piper.on("error", (err) => {
+      clearTimeout(timer);
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        settle(reject, new Error(`Piper binary not found: ${config.binaryPath}`));
+      } else {
+        settle(reject, new Error(`Failed to run piper: ${err.message}`));
+      }
+    });
+
+    piper.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        logVerbose(`Piper stderr: ${stderr.slice(0, 500)}`);
+        settle(reject, new Error(`Piper exited with code ${code}`));
+        return;
+      }
+
+      const pcmBuffer = Buffer.concat(chunks);
+      if (pcmBuffer.length === 0) {
+        settle(reject, new Error("Piper produced no audio output"));
+        return;
+      }
+
+      logVerbose(`Piper TTS: PCM output ${pcmBuffer.length} bytes, converting to ${outputFormat}`);
+      const MIN_FFMPEG_TIMEOUT_MS = 5000;
+      const remaining = Math.max(timeoutMs - (Date.now() - startTime), MIN_FFMPEG_TIMEOUT_MS);
+      convertPcmToFormat(pcmBuffer, config.sampleRate, outputFormat, remaining)
+        .then((v) => settle(resolve, v))
+        .catch((e) => settle(reject, e));
+    });
+
+    // Strip null bytes and C0 control characters (keep \t and \n for natural pauses)
+    // eslint-disable-next-line no-control-regex
+    const sanitized = text.replace(/[\0\x01-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    piper.stdin.write(sanitized);
+    piper.stdin.end();
+  });
 }
 
 export async function textToSpeech(params: {
@@ -613,6 +877,36 @@ export async function textToSpeech(params: {
           provider,
           outputFormat: edgeResult.outputFormat,
           voiceCompatible,
+        };
+      }
+
+      if (provider === "piper") {
+        if (!config.piper.modelPath) {
+          lastError = "piper: modelPath not configured";
+          continue;
+        }
+
+        const piperOutputFormat = channelId === "telegram" ? "opus" : "mp3";
+        const audioBuffer = await piperTTS({
+          text: params.text,
+          config: config.piper,
+          outputFormat: piperOutputFormat,
+          timeoutMs: config.timeoutMs,
+        });
+
+        const tempDir = mkdtempSync(path.join(tmpdir(), "tts-"));
+        const extension = piperOutputFormat === "opus" ? ".opus" : ".mp3";
+        const audioPath = path.join(tempDir, `voice-${Date.now()}${extension}`);
+        writeFileSync(audioPath, audioBuffer);
+        scheduleCleanup(tempDir);
+
+        return {
+          success: true,
+          audioPath,
+          latencyMs: Date.now() - providerStart,
+          provider,
+          outputFormat: piperOutputFormat,
+          voiceCompatible: piperOutputFormat === "opus",
         };
       }
 
@@ -716,6 +1010,29 @@ export async function textToSpeechTelephony(params: {
       if (provider === "edge") {
         lastError = "edge: unsupported for telephony";
         continue;
+      }
+
+      if (provider === "piper") {
+        if (!config.piper.modelPath) {
+          lastError = "piper: modelPath not configured";
+          continue;
+        }
+
+        const audioBuffer = await piperTTS({
+          text: params.text,
+          config: config.piper,
+          outputFormat: "wav",
+          timeoutMs: config.timeoutMs,
+        });
+
+        return {
+          success: true,
+          audioBuffer,
+          latencyMs: Date.now() - providerStart,
+          provider,
+          outputFormat: "wav",
+          sampleRate: config.piper.sampleRate,
+        };
       }
 
       const apiKey = resolveTtsApiKey(config, provider);
@@ -940,4 +1257,9 @@ export const _test = {
   summarizeText,
   resolveOutputFormat,
   resolveEdgeOutputFormat,
+  PIPER_DEFAULTS,
+  MAX_AUDIO_BUFFER_BYTES,
+  MAX_STDERR_BYTES,
+  piperTTS,
+  convertPcmToFormat,
 };

@@ -2,6 +2,7 @@ import type { ReplyPayload } from "../types.js";
 import type { CommandHandler } from "./commands-types.js";
 import { logVerbose } from "../../globals.js";
 import {
+  TTS_PROVIDERS,
   getLastTtsAttempt,
   getTtsMaxLength,
   getTtsProvider,
@@ -56,7 +57,8 @@ function ttsUsage(): ReplyPayload {
       `**Providers:**\n` +
       `• edge — Free, fast (default)\n` +
       `• openai — High quality (requires API key)\n` +
-      `• elevenlabs — Premium voices (requires API key)\n\n` +
+      `• elevenlabs — Premium voices (requires API key)\n` +
+      `• piper — Local neural TTS (requires model file)\n\n` +
       `**Text Limit (default: 1500, max: 4096):**\n` +
       `When text exceeds the limit:\n` +
       `• Summary ON: AI summarizes, then generates audio\n` +
@@ -162,6 +164,7 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
       const hasOpenAI = Boolean(resolveTtsApiKey(config, "openai"));
       const hasElevenLabs = Boolean(resolveTtsApiKey(config, "elevenlabs"));
       const hasEdge = isTtsProviderConfigured(config, "edge");
+      const hasPiper = isTtsProviderConfigured(config, "piper");
       return {
         shouldContinue: false,
         reply: {
@@ -171,13 +174,14 @@ export const handleTtsCommands: CommandHandler = async (params, allowTextCommand
             `OpenAI key: ${hasOpenAI ? "✅" : "❌"}\n` +
             `ElevenLabs key: ${hasElevenLabs ? "✅" : "❌"}\n` +
             `Edge enabled: ${hasEdge ? "✅" : "❌"}\n` +
-            `Usage: /tts provider openai | elevenlabs | edge`,
+            `Piper configured: ${hasPiper ? "✅" : "❌"}\n` +
+            `Usage: /tts provider ${TTS_PROVIDERS.join(" | ")}`,
         },
       };
     }
 
-    const requested = args.trim().toLowerCase();
-    if (requested !== "openai" && requested !== "elevenlabs" && requested !== "edge") {
+    const requested = args.trim().toLowerCase() as (typeof TTS_PROVIDERS)[number];
+    if (!TTS_PROVIDERS.includes(requested)) {
       return { shouldContinue: false, reply: ttsUsage() };
     }
 

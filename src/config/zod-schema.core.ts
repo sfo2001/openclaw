@@ -165,7 +165,7 @@ export const MarkdownConfigSchema = z
   .strict()
   .optional();
 
-export const TtsProviderSchema = z.enum(["elevenlabs", "openai", "edge"]);
+export const TtsProviderSchema = z.enum(["elevenlabs", "openai", "edge", "piper"]);
 export const TtsModeSchema = z.enum(["final", "all"]);
 export const TtsAutoSchema = z.enum(["off", "always", "inbound", "tagged"]);
 export const TtsConfigSchema = z
@@ -233,8 +233,24 @@ export const TtsConfigSchema = z
       })
       .strict()
       .optional(),
+    piper: z
+      .object({
+        binaryPath: z
+          .string()
+          .refine(isSafeExecutableValue, "expected safe executable name or path")
+          .optional(),
+        modelPath: z.string().refine(isSafeExecutableValue, "expected safe file path").optional(),
+        configPath: z.string().refine(isSafeExecutableValue, "expected safe file path").optional(),
+        sampleRate: z.number().int().min(8000).max(48000).optional(),
+        lengthScale: z.number().min(0.1).max(10).optional(),
+        sentenceSilence: z.number().min(0).max(10).optional(),
+        useCuda: z.boolean().optional(),
+        speaker: z.number().int().min(0).max(9999).optional(),
+      })
+      .strict()
+      .optional(),
     prefsPath: z.string().optional(),
-    maxTextLength: z.number().int().min(1).optional(),
+    maxTextLength: z.number().int().min(1).max(50000).optional(),
     timeoutMs: z.number().int().min(1000).max(120000).optional(),
   })
   .strict()

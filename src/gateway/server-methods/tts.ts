@@ -3,6 +3,7 @@ import { loadConfig } from "../../config/config.js";
 import {
   OPENAI_TTS_MODELS,
   OPENAI_TTS_VOICES,
+  TTS_PROVIDERS,
   getTtsProvider,
   isTtsEnabled,
   isTtsProviderConfigured,
@@ -39,6 +40,7 @@ export const ttsHandlers: GatewayRequestHandlers = {
         hasOpenAIKey: Boolean(resolveTtsApiKey(config, "openai")),
         hasElevenLabsKey: Boolean(resolveTtsApiKey(config, "elevenlabs")),
         edgeEnabled: isTtsProviderConfigured(config, "edge"),
+        piperConfigured: isTtsProviderConfigured(config, "piper"),
       });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
@@ -100,13 +102,13 @@ export const ttsHandlers: GatewayRequestHandlers = {
   },
   "tts.setProvider": async ({ params, respond }) => {
     const provider = typeof params.provider === "string" ? params.provider.trim() : "";
-    if (provider !== "openai" && provider !== "elevenlabs" && provider !== "edge") {
+    if (!TTS_PROVIDERS.includes(provider as (typeof TTS_PROVIDERS)[number])) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          "Invalid provider. Use openai, elevenlabs, or edge.",
+          `Invalid provider. Use ${TTS_PROVIDERS.join(", ")}.`,
         ),
       );
       return;
@@ -115,7 +117,7 @@ export const ttsHandlers: GatewayRequestHandlers = {
       const cfg = loadConfig();
       const config = resolveTtsConfig(cfg);
       const prefsPath = resolveTtsPrefsPath(config);
-      setTtsProvider(prefsPath, provider);
+      setTtsProvider(prefsPath, provider as (typeof TTS_PROVIDERS)[number]);
       respond(true, { provider });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
@@ -145,6 +147,12 @@ export const ttsHandlers: GatewayRequestHandlers = {
             id: "edge",
             name: "Edge TTS",
             configured: isTtsProviderConfigured(config, "edge"),
+            models: [],
+          },
+          {
+            id: "piper",
+            name: "Piper",
+            configured: isTtsProviderConfigured(config, "piper"),
             models: [],
           },
         ],

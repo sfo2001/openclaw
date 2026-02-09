@@ -1,8 +1,18 @@
 import { completeSimple } from "@mariozechner/pi-ai";
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { getApiKeyForModel } from "../agents/model-auth.js";
 import { resolveModel } from "../agents/pi-embedded-runner/model.js";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn() };
+});
+
+import { spawn as mockedSpawn } from "node:child_process";
 import * as tts from "./tts.js";
+
+const spawnMock = mockedSpawn as unknown as vi.Mock;
 
 vi.mock("@mariozechner/pi-ai", () => ({
   completeSimple: vi.fn(),
@@ -38,7 +48,15 @@ vi.mock("../agents/model-auth.js", () => ({
   requireApiKey: vi.fn((auth: { apiKey?: string }) => auth.apiKey ?? ""),
 }));
 
-const { _test, resolveTtsConfig, maybeApplyTtsToPayload, getTtsProvider } = tts;
+const {
+  _test,
+  resolveTtsConfig,
+  maybeApplyTtsToPayload,
+  getTtsProvider,
+  TTS_PROVIDERS,
+  isTtsProviderConfigured,
+  resolveTtsProviderOrder,
+} = tts;
 
 const {
   isValidVoiceId,
@@ -51,11 +69,45 @@ const {
   summarizeText,
   resolveOutputFormat,
   resolveEdgeOutputFormat,
+  PIPER_DEFAULTS,
+  MAX_AUDIO_BUFFER_BYTES,
+  MAX_STDERR_BYTES,
+  piperTTS,
+  convertPcmToFormat,
 } = _test;
+
+type MockChild = EventEmitter & {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  stdin: { write: vi.Mock; end: vi.Mock };
+  kill: vi.Mock;
+};
+
+function createMockChild(): MockChild {
+  const stdout = new EventEmitter();
+  const stderr = new EventEmitter();
+  const child = new EventEmitter() as MockChild;
+  child.stdout = stdout;
+  child.stderr = stderr;
+  child.stdin = { write: vi.fn(), end: vi.fn() };
+  child.kill = vi.fn();
+  return child;
+}
+
+const PIPER_CONFIG = {
+  binaryPath: "piper",
+  modelPath: "/models/en-us.onnx",
+  sampleRate: 22050,
+  lengthScale: 1.0,
+  sentenceSilence: 0.2,
+  useCuda: false,
+  speaker: 0,
+};
 
 describe("tts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    spawnMock.mockReset();
     vi.mocked(completeSimple).mockResolvedValue({
       content: [{ type: "text", text: "Summary" }],
     });
@@ -445,6 +497,263 @@ describe("tts", () => {
     });
   });
 
+  describe("TTS_PROVIDERS", () => {
+    it("includes piper", () => {
+      expect(TTS_PROVIDERS).toContain("piper");
+      expect(TTS_PROVIDERS).toHaveLength(4);
+    });
+
+    it("includes all expected providers", () => {
+      expect(TTS_PROVIDERS).toContain("openai");
+      expect(TTS_PROVIDERS).toContain("elevenlabs");
+      expect(TTS_PROVIDERS).toContain("edge");
+      expect(TTS_PROVIDERS).toContain("piper");
+    });
+  });
+
+  describe("PIPER_DEFAULTS", () => {
+    it("has expected default values", () => {
+      expect(PIPER_DEFAULTS.binaryPath).toBe("piper");
+      expect(PIPER_DEFAULTS.sampleRate).toBe(22050);
+      expect(PIPER_DEFAULTS.lengthScale).toBe(1.0);
+      expect(PIPER_DEFAULTS.sentenceSilence).toBe(0.2);
+      expect(PIPER_DEFAULTS.speaker).toBe(0);
+    });
+  });
+
+  describe("resolveTtsConfig — piper defaults", () => {
+    const baseCfg = {
+      agents: { defaults: { model: { primary: "openai/gpt-4o-mini" } } },
+      messages: { tts: {} },
+    };
+
+    it("applies default piper values when no piper config is provided", () => {
+      const config = resolveTtsConfig(baseCfg);
+      expect(config.piper.binaryPath).toBe(PIPER_DEFAULTS.binaryPath);
+      expect(config.piper.sampleRate).toBe(PIPER_DEFAULTS.sampleRate);
+      expect(config.piper.lengthScale).toBe(PIPER_DEFAULTS.lengthScale);
+      expect(config.piper.sentenceSilence).toBe(PIPER_DEFAULTS.sentenceSilence);
+      expect(config.piper.speaker).toBe(PIPER_DEFAULTS.speaker);
+      expect(config.piper.useCuda).toBe(false);
+      expect(config.piper.modelPath).toBeUndefined();
+      expect(config.piper.configPath).toBeUndefined();
+    });
+
+    it("uses configured piper values over defaults", () => {
+      const cfg = {
+        ...baseCfg,
+        messages: {
+          tts: {
+            piper: {
+              binaryPath: "/opt/piper/piper",
+              modelPath: "/models/de-de.onnx",
+              configPath: "/models/de-de.json",
+              sampleRate: 16000,
+              lengthScale: 1.5,
+              sentenceSilence: 0.5,
+              useCuda: true,
+              speaker: 3,
+            },
+          },
+        },
+      };
+      const config = resolveTtsConfig(cfg);
+      expect(config.piper.binaryPath).toBe("/opt/piper/piper");
+      expect(config.piper.modelPath).toBe("/models/de-de.onnx");
+      expect(config.piper.configPath).toBe("/models/de-de.json");
+      expect(config.piper.sampleRate).toBe(16000);
+      expect(config.piper.lengthScale).toBe(1.5);
+      expect(config.piper.sentenceSilence).toBe(0.5);
+      expect(config.piper.useCuda).toBe(true);
+      expect(config.piper.speaker).toBe(3);
+    });
+
+    it("trims whitespace from string piper fields", () => {
+      const cfg = {
+        ...baseCfg,
+        messages: {
+          tts: {
+            piper: {
+              binaryPath: "  /usr/bin/piper  ",
+              modelPath: "  ",
+              configPath: "   ",
+            },
+          },
+        },
+      };
+      const config = resolveTtsConfig(cfg);
+      expect(config.piper.binaryPath).toBe("/usr/bin/piper");
+      expect(config.piper.modelPath).toBeUndefined();
+      expect(config.piper.configPath).toBeUndefined();
+    });
+
+    it("falls back to default binaryPath when empty string provided", () => {
+      const cfg = {
+        ...baseCfg,
+        messages: { tts: { piper: { binaryPath: "" } } },
+      };
+      const config = resolveTtsConfig(cfg);
+      expect(config.piper.binaryPath).toBe("piper");
+    });
+  });
+
+  describe("getTtsProvider — piper auto-detection", () => {
+    const baseCfg = {
+      agents: { defaults: { model: { primary: "openai/gpt-4o-mini" } } },
+      messages: { tts: {} },
+    };
+
+    const restoreEnv = (snapshot: Record<string, string | undefined>) => {
+      const keys = ["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "XI_API_KEY"] as const;
+      for (const key of keys) {
+        const value = snapshot[key];
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    };
+
+    const withEnv = (env: Record<string, string | undefined>, run: () => void) => {
+      const snapshot = {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+        ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+        XI_API_KEY: process.env.XI_API_KEY,
+      };
+      try {
+        for (const [key, value] of Object.entries(env)) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+        run();
+      } finally {
+        restoreEnv(snapshot);
+      }
+    };
+
+    it("selects piper when modelPath is set and no API keys are present", () => {
+      withEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          ELEVENLABS_API_KEY: undefined,
+          XI_API_KEY: undefined,
+        },
+        () => {
+          const cfg = {
+            ...baseCfg,
+            messages: { tts: { piper: { modelPath: "/models/en-us.onnx" } } },
+          };
+          const config = resolveTtsConfig(cfg);
+          const provider = getTtsProvider(config, `/tmp/tts-prefs-piper-${Date.now()}.json`);
+          expect(provider).toBe("piper");
+        },
+      );
+    });
+
+    it("prefers OpenAI over piper when OpenAI key exists", () => {
+      withEnv(
+        {
+          OPENAI_API_KEY: "test-openai-key",
+          ELEVENLABS_API_KEY: undefined,
+          XI_API_KEY: undefined,
+        },
+        () => {
+          const cfg = {
+            ...baseCfg,
+            messages: { tts: { piper: { modelPath: "/models/en-us.onnx" } } },
+          };
+          const config = resolveTtsConfig(cfg);
+          const provider = getTtsProvider(config, `/tmp/tts-prefs-piper-${Date.now()}.json`);
+          expect(provider).toBe("openai");
+        },
+      );
+    });
+
+    it("does not select piper when modelPath is not set", () => {
+      withEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          ELEVENLABS_API_KEY: undefined,
+          XI_API_KEY: undefined,
+        },
+        () => {
+          const config = resolveTtsConfig(baseCfg);
+          const provider = getTtsProvider(config, `/tmp/tts-prefs-piper-${Date.now()}.json`);
+          expect(provider).toBe("edge");
+        },
+      );
+    });
+  });
+
+  describe("isTtsProviderConfigured — piper", () => {
+    const baseCfg = {
+      agents: { defaults: { model: { primary: "openai/gpt-4o-mini" } } },
+      messages: { tts: {} },
+    };
+
+    it("returns true when modelPath is set", () => {
+      const cfg = {
+        ...baseCfg,
+        messages: { tts: { piper: { modelPath: "/models/en-us.onnx" } } },
+      };
+      const config = resolveTtsConfig(cfg);
+      expect(isTtsProviderConfigured(config, "piper")).toBe(true);
+    });
+
+    it("returns false when modelPath is not set", () => {
+      const config = resolveTtsConfig(baseCfg);
+      expect(isTtsProviderConfigured(config, "piper")).toBe(false);
+    });
+
+    it("returns false when modelPath is whitespace-only", () => {
+      const cfg = {
+        ...baseCfg,
+        messages: { tts: { piper: { modelPath: "  " } } },
+      };
+      const config = resolveTtsConfig(cfg);
+      expect(isTtsProviderConfigured(config, "piper")).toBe(false);
+    });
+  });
+
+  describe("resolveTtsProviderOrder — piper", () => {
+    it("puts piper first when it is the primary", () => {
+      const order = resolveTtsProviderOrder("piper");
+      expect(order[0]).toBe("piper");
+      expect(order).toHaveLength(4);
+      expect(order).toContain("openai");
+      expect(order).toContain("elevenlabs");
+      expect(order).toContain("edge");
+    });
+
+    it("includes piper in non-primary position", () => {
+      const order = resolveTtsProviderOrder("openai");
+      expect(order[0]).toBe("openai");
+      expect(order).toContain("piper");
+    });
+  });
+
+  describe("parseTtsDirectives — piper provider", () => {
+    it("accepts piper as provider directive", () => {
+      const policy = resolveModelOverridePolicy({ enabled: true });
+      const input = "Hello [[tts:provider=piper]] world";
+      const result = parseTtsDirectives(input, policy);
+      expect(result.overrides.provider).toBe("piper");
+      expect(result.hasDirective).toBe(true);
+    });
+
+    it("rejects unknown provider in directive", () => {
+      const policy = resolveModelOverridePolicy({ enabled: true });
+      const input = "Hello [[tts:provider=unknown]] world";
+      const result = parseTtsDirectives(input, policy);
+      expect(result.overrides.provider).toBeUndefined();
+      expect(result.warnings).toContain('unsupported provider "unknown"');
+    });
+  });
+
   describe("maybeApplyTtsToPayload", () => {
     const baseCfg = {
       agents: { defaults: { model: { primary: "openai/gpt-4o-mini" } } },
@@ -592,6 +901,492 @@ describe("tts", () => {
 
       globalThis.fetch = originalFetch;
       process.env.OPENCLAW_TTS_PREFS = prevPrefs;
+    });
+  });
+
+  describe("convertPcmToFormat", () => {
+    it("converts PCM to wav via ffmpeg", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const pcm = Buffer.from("fake-pcm-data");
+      const promise = convertPcmToFormat(pcm, 22050, "wav", 10000);
+
+      // Verify ffmpeg was spawned with correct args
+      expect(spawnMock).toHaveBeenCalledWith("ffmpeg", [
+        "-f",
+        "s16le",
+        "-ar",
+        "22050",
+        "-ac",
+        "1",
+        "-i",
+        "pipe:0",
+        "-f",
+        "wav",
+        "pipe:1",
+      ]);
+
+      // Simulate ffmpeg writing output and closing
+      const wavOutput = Buffer.from("RIFF-fake-wav-data");
+      ffmpegChild.stdout.emit("data", wavOutput);
+      ffmpegChild.emit("close", 0);
+
+      const result = await promise;
+      expect(result).toEqual(wavOutput);
+    });
+
+    it("passes correct args for mp3 format", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 44100, "mp3", 10000);
+
+      expect(spawnMock).toHaveBeenCalledWith("ffmpeg", [
+        "-f",
+        "s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        "-i",
+        "pipe:0",
+        "-f",
+        "mp3",
+        "-b:a",
+        "128k",
+        "pipe:1",
+      ]);
+
+      ffmpegChild.stdout.emit("data", Buffer.from("mp3-data"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("passes correct args for opus format", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 48000, "opus", 10000);
+
+      expect(spawnMock).toHaveBeenCalledWith("ffmpeg", [
+        "-f",
+        "s16le",
+        "-ar",
+        "48000",
+        "-ac",
+        "1",
+        "-i",
+        "pipe:0",
+        "-f",
+        "ogg",
+        "-c:a",
+        "libopus",
+        "-b:a",
+        "64k",
+        "pipe:1",
+      ]);
+
+      ffmpegChild.stdout.emit("data", Buffer.from("opus-data"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("rejects when ffmpeg is not found (ENOENT)", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 10000);
+
+      const err = new Error("spawn ffmpeg ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      ffmpegChild.emit("error", err);
+
+      await expect(promise).rejects.toThrow("ffmpeg not found");
+    });
+
+    it("rejects on non-ENOENT spawn error", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 10000);
+      ffmpegChild.emit("error", new Error("EPERM"));
+
+      await expect(promise).rejects.toThrow("Failed to run ffmpeg: EPERM");
+    });
+
+    it("rejects on non-zero exit code without leaking stderr", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 10000);
+
+      ffmpegChild.stderr.emit("data", Buffer.from("some internal error details"));
+      ffmpegChild.emit("close", 1);
+
+      await expect(promise).rejects.toThrow("ffmpeg exited with code 1");
+      // Verify stderr is NOT in the error message (F3 fix)
+      try {
+        await promise;
+      } catch (e) {
+        expect((e as Error).message).not.toContain("some internal error");
+      }
+    });
+
+    it("rejects when output exceeds MAX_AUDIO_BUFFER_BYTES", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 10000);
+
+      // Send a chunk larger than the limit
+      const hugeChunk = Buffer.alloc(MAX_AUDIO_BUFFER_BYTES + 1);
+      ffmpegChild.stdout.emit("data", hugeChunk);
+
+      await expect(promise).rejects.toThrow("ffmpeg output exceeded maximum buffer size");
+      expect(ffmpegChild.kill).toHaveBeenCalled();
+    });
+
+    it("rejects on timeout", async () => {
+      vi.useFakeTimers();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 5000);
+
+      vi.advanceTimersByTime(5001);
+
+      await expect(promise).rejects.toThrow("ffmpeg audio conversion timed out");
+      expect(ffmpegChild.kill).toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it("caps stderr accumulation at MAX_STDERR_BYTES", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const promise = convertPcmToFormat(Buffer.alloc(10), 22050, "wav", 10000);
+
+      // Send stderr larger than the cap
+      const bigStderr = Buffer.alloc(MAX_STDERR_BYTES + 1000, 65); // 'A'
+      ffmpegChild.stderr.emit("data", bigStderr);
+      ffmpegChild.emit("close", 1);
+
+      // It should reject but not crash from unbounded allocation
+      await expect(promise).rejects.toThrow("ffmpeg exited with code 1");
+    });
+
+    it("writes PCM data to ffmpeg stdin", async () => {
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(ffmpegChild);
+
+      const pcm = Buffer.from("test-pcm");
+      const promise = convertPcmToFormat(pcm, 22050, "wav", 10000);
+
+      expect(ffmpegChild.stdin.write).toHaveBeenCalledWith(pcm);
+      expect(ffmpegChild.stdin.end).toHaveBeenCalled();
+
+      ffmpegChild.stdout.emit("data", Buffer.from("wav"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+  });
+
+  describe("piperTTS", () => {
+    it("rejects when modelPath is not configured", async () => {
+      const config = { ...PIPER_CONFIG, modelPath: undefined };
+      await expect(
+        piperTTS({ text: "hello", config, outputFormat: "wav", timeoutMs: 10000 }),
+      ).rejects.toThrow("Piper TTS requires modelPath to be configured");
+    });
+
+    it("spawns piper with correct args and converts output", async () => {
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const promise = piperTTS({
+        text: "hello world",
+        config: PIPER_CONFIG,
+        outputFormat: "mp3",
+        timeoutMs: 30000,
+      });
+
+      // Verify piper spawn args
+      expect(spawnMock).toHaveBeenCalledWith("piper", [
+        "--model",
+        "/models/en-us.onnx",
+        "--output-raw",
+        "--length-scale",
+        "1",
+        "--sentence-silence",
+        "0.2",
+      ]);
+
+      // Verify text was sanitized and written to stdin
+      expect(piperChild.stdin.write).toHaveBeenCalledWith("hello world");
+      expect(piperChild.stdin.end).toHaveBeenCalled();
+
+      // Simulate piper producing PCM output
+      piperChild.stdout.emit("data", Buffer.alloc(100, 0x42));
+      piperChild.emit("close", 0);
+
+      // Now ffmpeg should be spawned for conversion
+      ffmpegChild.stdout.emit("data", Buffer.from("converted-mp3"));
+      ffmpegChild.emit("close", 0);
+
+      const result = await promise;
+      expect(result).toEqual(Buffer.from("converted-mp3"));
+    });
+
+    it("includes configPath arg when configured", async () => {
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const config = { ...PIPER_CONFIG, configPath: "/models/en-us.json" };
+      const promise = piperTTS({
+        text: "test",
+        config,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      const piperArgs = spawnMock.mock.calls[0][1] as string[];
+      expect(piperArgs).toContain("--config");
+      expect(piperArgs).toContain("/models/en-us.json");
+
+      piperChild.stdout.emit("data", Buffer.alloc(10));
+      piperChild.emit("close", 0);
+      ffmpegChild.stdout.emit("data", Buffer.from("wav-data"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("includes speaker arg when non-zero", async () => {
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const config = { ...PIPER_CONFIG, speaker: 5 };
+      const promise = piperTTS({
+        text: "test",
+        config,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      const piperArgs = spawnMock.mock.calls[0][1] as string[];
+      expect(piperArgs).toContain("--speaker");
+      expect(piperArgs).toContain("5");
+
+      piperChild.stdout.emit("data", Buffer.alloc(10));
+      piperChild.emit("close", 0);
+      ffmpegChild.stdout.emit("data", Buffer.from("wav-data"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("includes --cuda flag when useCuda is true", async () => {
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const config = { ...PIPER_CONFIG, useCuda: true };
+      const promise = piperTTS({
+        text: "test",
+        config,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      const piperArgs = spawnMock.mock.calls[0][1] as string[];
+      expect(piperArgs).toContain("--cuda");
+
+      piperChild.stdout.emit("data", Buffer.alloc(10));
+      piperChild.emit("close", 0);
+      ffmpegChild.stdout.emit("data", Buffer.from("wav-data"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("rejects when piper binary not found (ENOENT)", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      const err = new Error("spawn piper ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      piperChild.emit("error", err);
+
+      await expect(promise).rejects.toThrow("Piper binary not found: piper");
+    });
+
+    it("rejects on non-ENOENT spawn error", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      piperChild.emit("error", new Error("EACCES"));
+
+      await expect(promise).rejects.toThrow("Failed to run piper: EACCES");
+    });
+
+    it("rejects on non-zero exit code without leaking stderr", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      piperChild.stderr.emit("data", Buffer.from("model loading error at /secret/path"));
+      piperChild.emit("close", 1);
+
+      await expect(promise).rejects.toThrow("Piper exited with code 1");
+      try {
+        await promise;
+      } catch (e) {
+        expect((e as Error).message).not.toContain("/secret/path");
+      }
+    });
+
+    it("rejects when piper produces no output", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      // Close without any stdout data
+      piperChild.emit("close", 0);
+
+      await expect(promise).rejects.toThrow("Piper produced no audio output");
+    });
+
+    it("rejects when piper output exceeds buffer limit", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      const hugeChunk = Buffer.alloc(MAX_AUDIO_BUFFER_BYTES + 1);
+      piperChild.stdout.emit("data", hugeChunk);
+
+      await expect(promise).rejects.toThrow("Piper output exceeded maximum buffer size");
+      expect(piperChild.kill).toHaveBeenCalled();
+    });
+
+    it("rejects on timeout", async () => {
+      vi.useFakeTimers();
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 3000,
+      });
+
+      vi.advanceTimersByTime(3001);
+
+      await expect(promise).rejects.toThrow("Piper TTS timed out");
+      expect(piperChild.kill).toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+
+    it("sanitizes control characters from stdin text", async () => {
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const textWithControlChars = "hello\0world\x01\x02test\ttab\nnewline";
+      const promise = piperTTS({
+        text: textWithControlChars,
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      // Null bytes and C0 control chars stripped, but \t and \n preserved
+      expect(piperChild.stdin.write).toHaveBeenCalledWith("helloworldtest\ttab\nnewline");
+
+      piperChild.stdout.emit("data", Buffer.alloc(10));
+      piperChild.emit("close", 0);
+      ffmpegChild.stdout.emit("data", Buffer.from("wav"));
+      ffmpegChild.emit("close", 0);
+      await promise;
+    });
+
+    it("subtracts elapsed piper time from ffmpeg timeout", async () => {
+      vi.useFakeTimers();
+      const piperChild = createMockChild();
+      const ffmpegChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild).mockReturnValueOnce(ffmpegChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      // Simulate piper taking 7 seconds
+      vi.advanceTimersByTime(7000);
+      piperChild.stdout.emit("data", Buffer.alloc(10));
+      piperChild.emit("close", 0);
+
+      // ffmpeg should get a timeout of max(10000-7000, 5000) = 5000ms
+      // Advancing 5001ms should trigger the ffmpeg timeout
+      vi.advanceTimersByTime(5001);
+
+      await expect(promise).rejects.toThrow("ffmpeg audio conversion timed out");
+      vi.useRealTimers();
+    });
+
+    it("caps stderr accumulation at MAX_STDERR_BYTES", async () => {
+      const piperChild = createMockChild();
+      spawnMock.mockReturnValueOnce(piperChild);
+
+      const promise = piperTTS({
+        text: "test",
+        config: PIPER_CONFIG,
+        outputFormat: "wav",
+        timeoutMs: 10000,
+      });
+
+      // Send more stderr than the cap allows
+      const bigStderr = Buffer.alloc(MAX_STDERR_BYTES + 5000, 65); // 'A'
+      piperChild.stderr.emit("data", bigStderr);
+      piperChild.emit("close", 1);
+
+      // Should reject without crashing
+      await expect(promise).rejects.toThrow("Piper exited with code 1");
     });
   });
 });

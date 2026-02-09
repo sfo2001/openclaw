@@ -1,4 +1,4 @@
-export type TtsProvider = "elevenlabs" | "openai" | "edge";
+export type TtsProvider = "elevenlabs" | "openai" | "edge" | "piper";
 
 export type TtsMode = "final" | "all";
 
@@ -72,6 +72,25 @@ export type TtsConfig = {
     saveSubtitles?: boolean;
     proxy?: string;
     timeoutMs?: number;
+  };
+  /** Piper (local neural TTS) configuration. */
+  piper?: {
+    /** Path to piper binary. */
+    binaryPath?: string;
+    /** Path to .onnx voice model. */
+    modelPath?: string;
+    /** Path to model JSON config (auto-detected from modelPath if omitted). */
+    configPath?: string;
+    /** Output sample rate in Hz. */
+    sampleRate?: number;
+    /** Speaking rate multiplier (>1 = slower). */
+    lengthScale?: number;
+    /** Silence between sentences in seconds. */
+    sentenceSilence?: number;
+    /** Use CUDA for GPU inference. */
+    useCuda?: boolean;
+    /** Speaker index for multi-speaker models. */
+    speaker?: number;
   };
   /** Optional path for local TTS user preferences JSON. */
   prefsPath?: string;
