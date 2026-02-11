@@ -30,8 +30,8 @@ export type VaultProviderEntry = {
 
 /**
  * Known provider defaults. Keys are canonical provider names (lowercase).
- * Ports and secret names must match vault/nginx.conf.template server blocks
- * and vault/entrypoint.sh (validation list + envsubst variable list).
+ * Ports and secret names must match vault/nginx.conf.template server blocks.
+ * entrypoint.sh auto-discovers variables from the template at startup.
  */
 export const VAULT_PROVIDER_DEFAULTS: Record<string, VaultProviderEntry> = {
   openai: { port: 8081, secretName: "OPENAI_API_KEY" },
