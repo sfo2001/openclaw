@@ -44,6 +44,7 @@ export const VAULT_PROVIDER_DEFAULTS: Record<string, VaultProviderEntry> = {
   mistral: { port: 8088, secretName: "MISTRAL_API_KEY" },
   brave: { port: 8089, secretName: "BRAVE_API_KEY" },
   perplexity: { port: 8090, secretName: "PERPLEXITY_API_KEY" },
+  "home-assistant": { port: 8091, secretName: "HA_TOKEN" },
 };
 
 // ---------------------------------------------------------------------------
