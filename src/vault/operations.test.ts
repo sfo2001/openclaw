@@ -321,6 +321,7 @@ describe("VAULT_PROVIDER_DEFAULTS", () => {
     expect(VAULT_PROVIDER_DEFAULTS.mistral.port).toBe(8088);
     expect(VAULT_PROVIDER_DEFAULTS.brave.port).toBe(8089);
     expect(VAULT_PROVIDER_DEFAULTS.perplexity.port).toBe(8090);
+    expect(VAULT_PROVIDER_DEFAULTS["home-assistant"].port).toBe(8091);
   });
 
   it("has correct secret names for new providers", () => {
@@ -329,6 +330,7 @@ describe("VAULT_PROVIDER_DEFAULTS", () => {
     expect(VAULT_PROVIDER_DEFAULTS.mistral.secretName).toBe("MISTRAL_API_KEY");
     expect(VAULT_PROVIDER_DEFAULTS.brave.secretName).toBe("BRAVE_API_KEY");
     expect(VAULT_PROVIDER_DEFAULTS.perplexity.secretName).toBe("PERPLEXITY_API_KEY");
+    expect(VAULT_PROVIDER_DEFAULTS["home-assistant"].secretName).toBe("HA_TOKEN");
   });
 
   it("has no duplicate ports", () => {

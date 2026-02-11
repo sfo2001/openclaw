@@ -251,4 +251,20 @@ http {
             return 403 'path not allowed';
         }
     }
+
+    # @vault provider=home-assistant port=8091 secret=HA_TOKEN
+    # Target: configurable via HA_UPSTREAM_URL environment variable
+    # Auth: Authorization: Bearer <long-lived access token>
+    #
+    # HA_UPSTREAM_URL is set via docker-compose environment (not a secret).
+    # HA_TOKEN is the long-lived access token from vault.age.
+    server {
+        listen 8091;
+
+        location / {
+            proxy_pass ${HA_UPSTREAM_URL};
+            proxy_set_header Authorization "Bearer ${HA_TOKEN}";
+            proxy_set_header Connection "";
+        }
+    }
 }
