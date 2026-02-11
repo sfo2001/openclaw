@@ -1,97 +1,29 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withEnv } from "../../test-utils/env.js";
+
+const { fetchWithSsrFGuardMock } = vi.hoisted(() => ({
+  fetchWithSsrFGuardMock: vi.fn(),
+}));
+
+vi.mock("../../infra/net/fetch-guard.js", () => ({
+  fetchWithSsrFGuard: fetchWithSsrFGuardMock,
+  withStrictGuardedFetchMode: (opts: Record<string, unknown>) => ({ ...opts, mode: "strict" }),
+  withTrustedEnvProxyGuardedFetchMode: (opts: Record<string, unknown>) => ({
+    ...opts,
+    mode: "trusted_env_proxy",
+  }),
+}));
+
 import { createWebSearchTool, __testing } from "./web-search.js";
 
 const {
-  inferPerplexityBaseUrlFromApiKey,
-  resolvePerplexityBaseUrl,
-  isDirectPerplexityBaseUrl,
-  resolvePerplexityRequestModel,
   normalizeBraveLanguageParams,
   normalizeFreshness,
-  freshnessToPerplexityRecency,
   resolveGrokApiKey,
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
-  resolveKimiApiKey,
-  resolveKimiModel,
-  resolveKimiBaseUrl,
-  extractKimiCitations,
 } = __testing;
-
-describe("web_search perplexity baseUrl defaults", () => {
-  it("detects a Perplexity key prefix", () => {
-    expect(inferPerplexityBaseUrlFromApiKey("pplx-123")).toBe("direct");
-  });
-
-  it("detects an OpenRouter key prefix", () => {
-    expect(inferPerplexityBaseUrlFromApiKey("sk-or-v1-123")).toBe("openrouter");
-  });
-
-  it("returns undefined for unknown key formats", () => {
-    expect(inferPerplexityBaseUrlFromApiKey("unknown-key")).toBeUndefined();
-  });
-
-  it("prefers explicit baseUrl over key-based defaults", () => {
-    expect(resolvePerplexityBaseUrl({ baseUrl: "https://example.com" }, "config", "pplx-123")).toBe(
-      "https://example.com",
-    );
-  });
-
-  it("defaults to direct when using PERPLEXITY_API_KEY", () => {
-    expect(resolvePerplexityBaseUrl(undefined, "perplexity_env")).toBe("https://api.perplexity.ai");
-  });
-
-  it("defaults to OpenRouter when using OPENROUTER_API_KEY", () => {
-    expect(resolvePerplexityBaseUrl(undefined, "openrouter_env")).toBe(
-      "https://openrouter.ai/api/v1",
-    );
-  });
-
-  it("defaults to direct when config key looks like Perplexity", () => {
-    expect(resolvePerplexityBaseUrl(undefined, "config", "pplx-123")).toBe(
-      "https://api.perplexity.ai",
-    );
-  });
-
-  it("defaults to OpenRouter when config key looks like OpenRouter", () => {
-    expect(resolvePerplexityBaseUrl(undefined, "config", "sk-or-v1-123")).toBe(
-      "https://openrouter.ai/api/v1",
-    );
-  });
-
-  it("defaults to OpenRouter for unknown config key formats", () => {
-    expect(resolvePerplexityBaseUrl(undefined, "config", "weird-key")).toBe(
-      "https://openrouter.ai/api/v1",
-    );
-  });
-});
-
-describe("web_search perplexity model normalization", () => {
-  it("detects direct Perplexity host", () => {
-    expect(isDirectPerplexityBaseUrl("https://api.perplexity.ai")).toBe(true);
-    expect(isDirectPerplexityBaseUrl("https://api.perplexity.ai/")).toBe(true);
-    expect(isDirectPerplexityBaseUrl("https://openrouter.ai/api/v1")).toBe(false);
-  });
-
-  it("strips provider prefix for direct Perplexity", () => {
-    expect(resolvePerplexityRequestModel("https://api.perplexity.ai", "perplexity/sonar-pro")).toBe(
-      "sonar-pro",
-    );
-  });
-
-  it("keeps prefixed model for OpenRouter", () => {
-    expect(
-      resolvePerplexityRequestModel("https://openrouter.ai/api/v1", "perplexity/sonar-pro"),
-    ).toBe("perplexity/sonar-pro");
-  });
-
-  it("keeps model unchanged when URL is invalid", () => {
-    expect(resolvePerplexityRequestModel("not-a-url", "perplexity/sonar-pro")).toBe(
-      "perplexity/sonar-pro",
-    );
-  });
-});
 
 describe("web_search brave language param normalization", () => {
   it("normalizes and auto-corrects swapped Brave language params", () => {
@@ -117,36 +49,18 @@ describe("web_search brave language param normalization", () => {
 
 describe("web_search freshness normalization", () => {
   it("accepts Brave shortcut values", () => {
-    expect(normalizeFreshness("pd")).toBe("pd");
-    expect(normalizeFreshness("PW")).toBe("pw");
+    expect(normalizeFreshness("pd", "brave")).toBe("pd");
+    expect(normalizeFreshness("PW", "brave")).toBe("pw");
   });
 
   it("accepts valid date ranges", () => {
-    expect(normalizeFreshness("2024-01-01to2024-01-31")).toBe("2024-01-01to2024-01-31");
+    expect(normalizeFreshness("2024-01-01to2024-01-31", "brave")).toBe("2024-01-01to2024-01-31");
   });
 
   it("rejects invalid date ranges", () => {
-    expect(normalizeFreshness("2024-13-01to2024-01-31")).toBeUndefined();
-    expect(normalizeFreshness("2024-02-30to2024-03-01")).toBeUndefined();
-    expect(normalizeFreshness("2024-03-10to2024-03-01")).toBeUndefined();
-  });
-});
-
-describe("freshnessToPerplexityRecency", () => {
-  it("maps Brave shortcuts to Perplexity recency values", () => {
-    expect(freshnessToPerplexityRecency("pd")).toBe("day");
-    expect(freshnessToPerplexityRecency("pw")).toBe("week");
-    expect(freshnessToPerplexityRecency("pm")).toBe("month");
-    expect(freshnessToPerplexityRecency("py")).toBe("year");
-  });
-
-  it("returns undefined for date ranges (not supported by Perplexity)", () => {
-    expect(freshnessToPerplexityRecency("2024-01-01to2024-01-31")).toBeUndefined();
-  });
-
-  it("returns undefined for undefined/empty input", () => {
-    expect(freshnessToPerplexityRecency(undefined)).toBeUndefined();
-    expect(freshnessToPerplexityRecency("")).toBeUndefined();
+    expect(normalizeFreshness("2024-13-01to2024-01-31", "brave")).toBeUndefined();
+    expect(normalizeFreshness("2024-02-30to2024-03-01", "brave")).toBeUndefined();
+    expect(normalizeFreshness("2024-03-10to2024-03-01", "brave")).toBeUndefined();
   });
 });
 
@@ -269,58 +183,6 @@ describe("web_search grok response parsing", () => {
   });
 });
 
-<<<<<<<< HEAD:src/agents/tools/web-search.test.ts
-describe("web_search kimi config resolution", () => {
-  it("uses config apiKey when provided", () => {
-    expect(resolveKimiApiKey({ apiKey: "kimi-test-key" })).toBe("kimi-test-key");
-  });
-
-  it("falls back to KIMI_API_KEY, then MOONSHOT_API_KEY", () => {
-    withEnv({ KIMI_API_KEY: "kimi-env", MOONSHOT_API_KEY: "moonshot-env" }, () => {
-      expect(resolveKimiApiKey({})).toBe("kimi-env");
-    });
-    withEnv({ KIMI_API_KEY: undefined, MOONSHOT_API_KEY: "moonshot-env" }, () => {
-      expect(resolveKimiApiKey({})).toBe("moonshot-env");
-    });
-  });
-
-  it("returns undefined when no Kimi key is configured", () => {
-    withEnv({ KIMI_API_KEY: undefined, MOONSHOT_API_KEY: undefined }, () => {
-      expect(resolveKimiApiKey({})).toBeUndefined();
-      expect(resolveKimiApiKey(undefined)).toBeUndefined();
-    });
-  });
-
-  it("resolves default model and baseUrl", () => {
-    expect(resolveKimiModel({})).toBe("moonshot-v1-128k");
-    expect(resolveKimiBaseUrl({})).toBe("https://api.moonshot.ai/v1");
-  });
-});
-
-describe("extractKimiCitations", () => {
-  it("collects unique URLs from search_results and tool arguments", () => {
-    expect(
-      extractKimiCitations({
-        search_results: [{ url: "https://example.com/a" }, { url: "https://example.com/a" }],
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  function: {
-                    arguments: JSON.stringify({
-                      search_results: [{ url: "https://example.com/b" }],
-                      url: "https://example.com/c",
-                    }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      }).toSorted(),
-    ).toEqual(["https://example.com/a", "https://example.com/b", "https://example.com/c"]);
-========
 describe("web_search vault proxy integration", () => {
   it("creates tool when vault is disabled (unchanged behavior)", () => {
     const tool = createWebSearchTool({
@@ -384,26 +246,36 @@ describe("web_search vault proxy integration", () => {
 });
 
 describe("web_search vault proxy execute path", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  beforeEach(() => {
+    fetchWithSsrFGuardMock.mockReset();
   });
 
+  function setupFetchMock(body: object): void {
+    fetchWithSsrFGuardMock.mockImplementation(async (opts: { url: string }) => ({
+      response: new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+      finalUrl: opts.url,
+      release: async () => {},
+    }));
+  }
+
+  function getCapturedUrl(): string {
+    return fetchWithSsrFGuardMock.mock.calls[0][0].url;
+  }
+
+  function getCapturedHeaders(): Record<string, string> {
+    const init = fetchWithSsrFGuardMock.mock.calls[0][0].init ?? {};
+    return Object.fromEntries(
+      Object.entries(init.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]),
+    );
+  }
+
   it("brave: routes through vault proxy URL, omits X-Subscription-Token", async () => {
-    let capturedUrl = "";
-    let capturedHeaders: Record<string, string> = {};
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      capturedUrl = url;
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]),
-      );
-      return new Response(
-        JSON.stringify({
-          web: { results: [{ title: "test", url: "https://example.com", description: "desc" }] },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
-    vi.stubGlobal("fetch", fetchMock);
+    setupFetchMock({
+      web: { results: [{ title: "test", url: "https://example.com", description: "desc" }] },
+    });
 
     const tool = createWebSearchTool({
       config: {
@@ -414,28 +286,16 @@ describe("web_search vault proxy execute path", () => {
 
     await tool.execute("t1", { query: "test query" });
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(capturedUrl).toContain("http://vault:8089/res/v1/web/search");
-    expect(capturedHeaders).not.toHaveProperty("x-subscription-token");
+    expect(fetchWithSsrFGuardMock).toHaveBeenCalledOnce();
+    expect(getCapturedUrl()).toContain("http://vault:8089/res/v1/web/search");
+    expect(getCapturedHeaders()).not.toHaveProperty("x-subscription-token");
   });
 
   it("perplexity: routes through vault proxy URL, omits Authorization header", async () => {
-    let capturedUrl = "";
-    let capturedHeaders: Record<string, string> = {};
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      capturedUrl = url;
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]),
-      );
-      return new Response(
-        JSON.stringify({
-          choices: [{ message: { content: "answer" } }],
-          citations: ["https://example.com"],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
-    vi.stubGlobal("fetch", fetchMock);
+    setupFetchMock({
+      choices: [{ message: { content: "answer" } }],
+      citations: ["https://example.com"],
+    });
 
     const tool = createWebSearchTool({
       config: {
@@ -446,25 +306,13 @@ describe("web_search vault proxy execute path", () => {
 
     await tool.execute("t2", { query: "test query" });
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(capturedUrl).toBe("http://vault:8090/chat/completions");
-    expect(capturedHeaders).not.toHaveProperty("authorization");
+    expect(fetchWithSsrFGuardMock).toHaveBeenCalledOnce();
+    expect(getCapturedUrl()).toBe("http://vault:8090");
+    expect(getCapturedHeaders()).not.toHaveProperty("authorization");
   });
 
   it("grok: routes through vault proxy URL, omits Authorization header", async () => {
-    let capturedUrl = "";
-    let capturedHeaders: Record<string, string> = {};
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      capturedUrl = url;
-      capturedHeaders = Object.fromEntries(
-        Object.entries(init?.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v]),
-      );
-      return new Response(
-        JSON.stringify({ output_text: "answer", citations: ["https://example.com"] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
-    vi.stubGlobal("fetch", fetchMock);
+    setupFetchMock({ output_text: "answer", citations: ["https://example.com"] });
 
     const tool = createWebSearchTool({
       config: {
@@ -475,9 +323,8 @@ describe("web_search vault proxy execute path", () => {
 
     await tool.execute("t3", { query: "test query" });
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(capturedUrl).toBe("http://vault:8087/v1/responses");
-    expect(capturedHeaders).not.toHaveProperty("authorization");
->>>>>>>> faa764a9d (feat(vault): expand proxy to all supported providers):src/agents/tools/web-search.vault-proxy.test.ts
+    expect(fetchWithSsrFGuardMock).toHaveBeenCalledOnce();
+    expect(getCapturedUrl()).toBe("http://vault:8087/v1/responses");
+    expect(getCapturedHeaders()).not.toHaveProperty("authorization");
   });
 });

@@ -68,6 +68,8 @@ const MODELSTUDIO_NATIVE_BASE_URLS = new Set([
   "https://coding.dashscope.aliyuncs.com/v1",
 ]);
 
+const LOCAL_PROVIDER_PLACEHOLDER_KEY = "no-key-required";
+
 const ENV_VAR_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 
 function normalizeApiKeyConfig(value: string): string {
@@ -591,7 +593,7 @@ export function normalizeProviders(params: {
           // validation — silently dropping all provider overrides (including
           // vault proxy baseUrl rewrites for other providers).
           mutated = true;
-          normalizedProvider = { ...normalizedProvider, apiKey: "no-key-required" };
+          normalizedProvider = { ...normalizedProvider, apiKey: LOCAL_PROVIDER_PLACEHOLDER_KEY };
         }
       }
     }
