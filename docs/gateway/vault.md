@@ -272,8 +272,8 @@ for providers that have models but no configured API key.
 
 ### Adding a new provider
 
-1. Add a `server` block to `vault/nginx.conf.template` with a new port
-2. Add the secret variable to the `envsubst` list in `vault/entrypoint.sh`
+1. Add a `server` block to `vault/nginx.conf.template` with a new port and `${SECRET_VAR}` placeholder
+2. Add the entry to `VAULT_PROVIDER_DEFAULTS` in `src/vault/operations.ts`
 3. `openclaw vault add <SECRET_NAME> <value>`
 4. Add the proxy mapping: set `vault.proxies.<provider>` in config
 

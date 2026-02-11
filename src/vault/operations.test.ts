@@ -409,3 +409,46 @@ describe("findProviderBySecretName", () => {
     expect(findProviderBySecretName("UNKNOWN_KEY")).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Template ↔ registry sync test
+// ---------------------------------------------------------------------------
+
+describe("nginx.conf.template ↔ VAULT_PROVIDER_DEFAULTS sync", () => {
+  const TEMPLATE_PATH = path.resolve(__dirname, "../../vault/nginx.conf.template");
+  const UPPERCASE_VAR_RE = /\$\{([A-Z][A-Z0-9_]*)\}/g;
+
+  function extractTemplateVars(): Set<string> {
+    const template = fs.readFileSync(TEMPLATE_PATH, "utf-8");
+    const vars = new Set<string>();
+    for (const line of template.split("\n")) {
+      // Skip comment lines — they may contain placeholder examples like ${VAR}
+      if (line.trimStart().startsWith("#")) {
+        continue;
+      }
+      let match: RegExpExecArray | null;
+      while ((match = UPPERCASE_VAR_RE.exec(line)) !== null) {
+        vars.add(match[1]);
+      }
+    }
+    return vars;
+  }
+
+  it("every registry secretName has a matching ${VAR} in the template", () => {
+    const templateVars = extractTemplateVars();
+    const registrySecrets = Object.values(VAULT_PROVIDER_DEFAULTS).map((e) => e.secretName);
+
+    const missingFromTemplate = registrySecrets.filter((s) => !templateVars.has(s));
+    expect(missingFromTemplate).toEqual([]);
+  });
+
+  it("every ${UPPER_CASE_VAR} in the template has a registry entry", () => {
+    const templateVars = extractTemplateVars();
+    const registrySecrets = new Set(
+      Object.values(VAULT_PROVIDER_DEFAULTS).map((e) => e.secretName),
+    );
+
+    const missingFromRegistry = [...templateVars].filter((v) => !registrySecrets.has(v));
+    expect(missingFromRegistry).toEqual([]);
+  });
+});
