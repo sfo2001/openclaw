@@ -6,10 +6,10 @@
 # Each server block listens on a dedicated port and proxies to one API,
 # injecting the correct auth header format.
 #
-# Adding a new provider requires updating three files in sync:
+# Adding a new provider requires updating two files:
 #   1. This file: add a new server block with the provider's port and auth header
-#   2. vault/entrypoint.sh: add the secret name to the validation list and envsubst call
-#   3. src/vault/operations.ts: add the entry to VAULT_PROVIDER_DEFAULTS
+#   2. src/vault/operations.ts: add the entry to VAULT_PROVIDER_DEFAULTS
+# entrypoint.sh auto-discovers ${VAR} placeholders from this template.
 
 user nginx;
 worker_processes 1;

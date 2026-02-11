@@ -771,8 +771,10 @@ describe("vault status output", () => {
     expect(output).toContain("age1testpubkey");
     expect(output).toContain("openai");
     expect(output).toContain("http://vault:8081");
+    expect(output).toContain("(OPENAI_API_KEY)"); // secret name annotation
     expect(output).toContain("anthropic");
     expect(output).toContain("http://vault:8082");
+    expect(output).toContain("(ANTHROPIC_API_KEY)"); // secret name annotation
   });
 
   it("shows disabled state and missing file", async () => {

@@ -19,6 +19,7 @@ import { defaultRuntime } from "../runtime.js";
 import { renderTable } from "../terminal/table.js";
 import { theme } from "../terminal/theme.js";
 import {
+  VAULT_PROVIDER_DEFAULTS,
   buildDefaultProxyMap,
   decryptVault,
   encryptVault,
@@ -191,7 +192,9 @@ export function registerVaultCli(program: Command) {
         if (proxies && Object.keys(proxies).length > 0) {
           rows.push({ Key: "Proxy mappings", Value: "" });
           for (const [provider, url] of Object.entries(proxies)) {
-            rows.push({ Key: `  ${provider}`, Value: url });
+            const secret = VAULT_PROVIDER_DEFAULTS[provider]?.secretName;
+            const suffix = secret ? `  (${secret})` : "";
+            rows.push({ Key: `  ${provider}`, Value: `${url}${suffix}` });
           }
         } else {
           rows.push({ Key: "Proxy mappings", Value: "(none)" });
