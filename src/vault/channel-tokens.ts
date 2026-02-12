@@ -5,13 +5,24 @@
  * (Telegram bot token, Discord token, Slack tokens) from the vault
  * sidecar's HTTP endpoints on the internal network (port 5335).
  *
- * Tokens are stored in a module-scope Map — never written to the
- * filesystem or exposed via environment variables.
+ * Tokens are stored in a global Map shared via `Symbol.for()` so that
+ * both the main bundle and jiti-loaded extension plugins access the same
+ * store. Without this, the bundler inlines the module into a chunk with
+ * its own closure, while jiti creates a separate instance — two stores,
+ * one populated, one empty.
  */
 import type { OpenClawConfig } from "../config/config.js";
 import { VAULT_CHANNEL_DEFAULTS } from "./operations.js";
 
-const store = new Map<string, string>();
+const STORE_KEY = Symbol.for("openclaw.vaultChannelTokenStore");
+
+const store: Map<string, string> = (() => {
+  const g = globalThis as typeof globalThis & { [STORE_KEY]?: Map<string, string> };
+  if (!g[STORE_KEY]) {
+    g[STORE_KEY] = new Map();
+  }
+  return g[STORE_KEY];
+})();
 const VAULT_TOKEN_PORT = 5335;
 const FETCH_TIMEOUT_MS = 5000;
 
