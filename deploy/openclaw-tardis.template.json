@@ -55,7 +55,7 @@
         ]
       },
       "autorouter": {
-        "baseUrl": "http://192.168.178.6:4000/v1",
+        "baseUrl": "http://autorouter:4000/v1",
         "apiKey": "sk-autorouter-local",
         "api": "openai-completions",
         "models": [
@@ -211,8 +211,11 @@
     "web": {
       "search": {
         "enabled": true,
-        "provider": "brave",
-        "maxResults": 5
+        "provider": "searxng",
+        "maxResults": 5,
+        "searxng": {
+          "baseUrl": "http://searxng:8080"
+        }
       },
       "fetch": {
         "enabled": true,

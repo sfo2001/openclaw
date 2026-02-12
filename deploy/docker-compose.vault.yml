@@ -106,6 +106,13 @@ services:
       # and exec disabled.
     tmpfs:
       - /tmp:size=128m,noexec,nosuid,nodev,mode=1777
+    extra_hosts:
+      # Host-gateway for bridge containers (autorouter) and Unraid host access
+      - "host.docker.internal:host-gateway"
+      # Ollama host (Matrix server)
+      - "matrix:192.168.178.159"
+      # Autorouter (bridge container on host — resolves via Docker NAT)
+      - "autorouter:host-gateway"
     networks:
       # Internal for vault communication, external for port publishing.
       # Credentials stay isolated: the gateway has no API keys.

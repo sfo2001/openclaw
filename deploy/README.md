@@ -12,6 +12,8 @@ Dev Machine --> Registry (192.168.178.72:5000)
                      |
                      +--> Matrix (192.168.178.159:11434) - Ollama
                      |
+                     +--> Autorouter (bridge, :4000 port mapping)
+                     |
                      +--> NFS (192.168.178.71:/nfs/openclaw)
 ```
 

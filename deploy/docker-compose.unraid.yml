@@ -65,6 +65,11 @@ services:
       - "matrix:192.168.178.159"
       # Gitea server
       - "gitea:192.168.178.3"
+      # SearXNG (bridged container on host — must use host-gateway because
+      # ipvlan containers cannot reach their own host IP directly)
+      - "searxng:host-gateway"
+      # Autorouter (bridge container on host — same pattern as searxng)
+      - "autorouter:host-gateway"
     dns:
       - 1.1.1.1
       - 1.0.0.1

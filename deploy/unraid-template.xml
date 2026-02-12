@@ -14,7 +14,7 @@
   <WebUI>http://[IP]:[PORT:18790]/</WebUI>
   <TemplateURL/>
   <Icon>https://raw.githubusercontent.com/openclaw/openclaw/main/docs/images/logo.png</Icon>
-  <ExtraParams>--init --read-only --security-opt=no-new-privileges:true --cap-drop=ALL --add-host=matrix:192.168.178.159 --add-host=gitea:192.168.178.3 --dns=1.1.1.1 --dns=1.0.0.1 --tmpfs /tmp:size=128m,noexec,nosuid,nodev,mode=1777 --memory=2g --cpus=2</ExtraParams>
+  <ExtraParams>--init --read-only --security-opt=no-new-privileges:true --cap-drop=ALL --add-host=matrix:192.168.178.159 --add-host=gitea:192.168.178.3 --add-host=autorouter:host-gateway --dns=1.1.1.1 --dns=1.0.0.1 --tmpfs /tmp:size=128m,noexec,nosuid,nodev,mode=1777 --memory=2g --cpus=2</ExtraParams>
   <PostArgs>node dist/index.js gateway --bind lan --port 18789</PostArgs>
   <CPUset/>
   <DateInstalled></DateInstalled>

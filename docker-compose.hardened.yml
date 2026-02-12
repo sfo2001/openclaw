@@ -49,6 +49,7 @@ services:
       - openclaw-isolated
     extra_hosts:
       - "matrix:192.168.178.159"
+      - "autorouter:host-gateway"
     dns:
       - 1.1.1.1
       - 1.0.0.1
