@@ -27,16 +27,10 @@ Edit `/boot/config/docker.cfg` or use Unraid Docker settings to add:
 
 Restart Docker after this change.
 
-### 2. Install docker-compose
+### 2. Install Docker Compose
 
-Add to `/boot/config/go` for persistence across reboots:
-
-```bash
-# Download docker-compose
-curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-  -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
-```
+Install the **Docker Compose Manager** plugin from Unraid Community Applications.
+This provides `docker compose` (v2 syntax) integrated with Docker on Unraid.
 
 ### 3. Create Directories and Home Setup
 
@@ -183,7 +177,70 @@ docker pull 192.168.178.72:5000/OpenClaw:latest
 docker pull 192.168.178.72:5000/openclaw-sandbox:latest
 
 # Start/restart
-docker-compose up -d --force-recreate
+docker compose up -d --force-recreate
+```
+
+## Vault Deployment
+
+The vault sidecar isolates API credentials from the OpenClaw container. Secrets
+are age-encrypted at rest and decrypted only inside the vault container at
+startup. See `docs/gateway/vault.md` for the full architecture.
+
+### Initial Setup
+
+```bash
+# On dev machine: build and push vault image
+./scripts/build-and-push.sh --vault
+
+# On TARDIS: copy the compose file
+scp deploy/docker-compose.vault.yml tardis:/mnt/user/appdata/openclaw/
+```
+
+### Migrate Secrets to Vault
+
+Use `openclaw vault migrate` to generate the age keypair and encrypt existing
+API keys from `openclaw.json` into `vault.age`:
+
+```bash
+# On TARDIS (interactive — prints the age secret key)
+docker run --rm -it \
+  -v /mnt/user/appdata/openclaw/config:/config \
+  -e OPENCLAW_CONFIG_PATH=/config/openclaw.json \
+  192.168.178.72:5000/openclaw-hardened:latest \
+  node dist/index.js vault migrate --proxy-host vault
+
+# Save the printed AGE_SECRET_KEY to .env
+echo 'AGE_SECRET_KEY=<key-from-above>' > /mnt/user/appdata/openclaw/.env
+chmod 0600 /mnt/user/appdata/openclaw/.env
+```
+
+### Start Vault Deployment
+
+```bash
+cd /mnt/user/appdata/openclaw
+docker compose -f docker-compose.vault.yml up -d
+```
+
+### Vault Update Workflow
+
+```bash
+# On dev machine: rebuild and push
+./scripts/build-and-push.sh --vault
+
+# On TARDIS: pull new images and recreate
+cd /mnt/user/appdata/openclaw
+docker compose -f docker-compose.vault.yml pull
+docker compose -f docker-compose.vault.yml up -d --force-recreate
+```
+
+### Rotate Secrets
+
+Re-run `openclaw vault migrate` to re-encrypt with new keys, then update `.env`
+with the new secret key and restart:
+
+```bash
+cd /mnt/user/appdata/openclaw
+docker compose -f docker-compose.vault.yml restart vault
 ```
 
 ## Update Workflow
@@ -202,7 +259,7 @@ git checkout deploy/tardis-hardened
 ```bash
 docker pull 192.168.178.72:5000/OpenClaw:latest
 docker pull 192.168.178.72:5000/openclaw-sandbox:latest
-docker-compose up -d --force-recreate
+docker compose up -d --force-recreate
 ```
 
 ## Verification Checklist
@@ -226,6 +283,12 @@ docker logs OpenClaw --tail 50
 
 # Verify includeTimeInPrompt in system prompt
 docker exec OpenClaw node dist/index.js status
+
+# Vault: health check
+docker exec openclaw-vault wget -qO- http://localhost:5335/live
+
+# Vault: test a proxy endpoint
+docker exec openclaw-vault wget -qO- http://localhost:8081/v1/models
 ```
 
 ## Troubleshooting
@@ -276,6 +339,47 @@ curl http://192.168.178.159:11434/api/tags
 docker inspect OpenClaw | jq '.[0].HostConfig.ExtraHosts'
 ```
 
+### Vault sidecar won't start
+
+```bash
+# Check vault logs for decrypt/config errors
+docker logs openclaw-vault --tail 50
+
+# Verify .env exists and has correct permissions
+ls -la /mnt/user/appdata/openclaw/.env
+# Should be -rw------- (0600)
+
+# Verify vault.age exists
+ls -la /mnt/user/appdata/openclaw/config/vault.age
+
+# Test decryption manually (prints secrets — use only for debugging)
+docker run --rm \
+  --env-file /mnt/user/appdata/openclaw/.env \
+  -v /mnt/user/appdata/openclaw/config/vault.age:/etc/vault.age:ro \
+  192.168.178.72:5000/openclaw-vault:latest \
+  sh -c 'echo "$AGE_SECRET_KEY" | age -d -i - /etc/vault.age'
+```
+
+### Vault proxy returns 502/connection refused
+
+```bash
+# DNS resolution: nginx resolves upstreams at startup, not per-request.
+# If DNS was unavailable at start, restart the vault.
+cd /mnt/user/appdata/openclaw
+docker compose -f docker-compose.vault.yml restart vault
+
+# Verify vault-external network exists and vault is connected
+docker network inspect vault-external | jq '.[0].Containers'
+
+# Test from inside the vault container
+docker exec openclaw-vault wget -qO- http://localhost:5335/live
+```
+
+### Vault capabilities error (Operation not permitted)
+
+The vault sidecar needs CHOWN, SETUID, SETGID, NET_BIND_SERVICE capabilities.
+These are configured in `docker-compose.vault.yml` via `cap_add`.
+
 ### Sandbox image not pulling
 
 ```bash
@@ -291,7 +395,9 @@ docker info | grep -A5 "Insecure Registries"
 | File                             | Purpose                                       |
 | -------------------------------- | --------------------------------------------- |
 | `unraid-template.xml`            | Unraid Docker GUI template                    |
-| `docker-compose.unraid.yml`      | Docker Compose alternative (if not using GUI) |
+| `docker-compose.unraid.yml`      | Docker Compose for standalone gateway         |
+| `docker-compose.vault.yml`       | Docker Compose for vault + gateway            |
 | `openclaw-tardis.template.json`  | Config template (replace token before use)    |
+| `../vault/`                      | Vault sidecar (Dockerfile, nginx, entrypoint) |
 | `../scripts/build-and-push.sh`   | Build and push to private registry            |
 | `../docker-compose.hardened.yml` | Local dev deployment                          |

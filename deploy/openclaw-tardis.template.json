@@ -226,7 +226,14 @@
     "proxies": {
       "openai": "http://vault:8081",
       "anthropic": "http://vault:8082",
-      "deepgram": "http://vault:8083"
+      "deepgram": "http://vault:8083",
+      "openai-compat": "http://vault:8084",
+      "google": "http://vault:8085",
+      "groq": "http://vault:8086",
+      "xai": "http://vault:8087",
+      "mistral": "http://vault:8088",
+      "brave": "http://vault:8089",
+      "perplexity": "http://vault:8090"
     }
   }
 }

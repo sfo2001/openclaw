@@ -1,0 +1,132 @@
+# OpenClaw deployment with credential-isolating vault sidecar.
+#
+# Architecture:
+#   openclaw-gateway  -- internal network only --> vault sidecar
+#   vault sidecar     -- external network ------> cloud APIs (OpenAI, Anthropic, etc.)
+#
+# Secrets never enter the OpenClaw container. The vault sidecar decrypts
+# vault.age at startup and injects credentials into proxied API requests
+# via nginx reverse proxy.
+#
+# Prerequisites:
+#   1. Run `openclaw vault migrate` to generate vault.age + age keypair
+#   2. Create .env with AGE_SECRET_KEY=<key-printed-by-migrate>
+#   3. chmod 0600 .env
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.vault.yml up -d
+#
+# Verify:
+#   docker exec openclaw-vault curl -s http://localhost:8081/v1/models
+#   (Should return OpenAI models list if OPENAI_API_KEY is valid)
+
+services:
+  vault:
+    image: localhost:5000/openclaw-vault:latest
+    container_name: openclaw-vault
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Required for nginx master→worker privilege drop (user nginx directive)
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    tmpfs:
+      # Decrypted secrets and rendered nginx.conf; volatile, never persisted.
+      - /run/secrets:size=1m,noexec,nosuid,nodev,mode=0700
+      # nginx worker cache and log directories
+      - /var/cache/nginx:size=10m,noexec,nosuid,nodev
+      - /var/log/nginx:size=1m,noexec,nosuid,nodev
+    volumes:
+      - /mnt/user/appdata/openclaw/config/vault.age:/etc/vault.age:ro
+    env_file: .env # Contains AGE_SECRET_KEY only
+    dns:
+      - 1.1.1.1
+      - 1.0.0.1
+    networks:
+      # External first: nginx resolves upstream hostnames at startup
+      - vault-external
+      - vault-internal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5335/live"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+    restart: unless-stopped
+
+  openclaw-gateway:
+    image: localhost:5000/openclaw-hardened:latest
+    container_name: OpenClaw
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      # Vault proxy endpoints (no API keys needed — documentation/reference only,
+      # actual routing uses vault.proxies in openclaw.json)
+      VAULT_OPENAI_PROXY: http://vault:8081
+      VAULT_ANTHROPIC_PROXY: http://vault:8082
+      VAULT_DEEPGRAM_PROXY: http://vault:8083
+      VAULT_OPENAI_COMPAT_PROXY: http://vault:8084
+      VAULT_GOOGLE_PROXY: http://vault:8085
+      VAULT_GROQ_PROXY: http://vault:8086
+      VAULT_XAI_PROXY: http://vault:8087
+      VAULT_MISTRAL_PROXY: http://vault:8088
+      VAULT_BRAVE_PROXY: http://vault:8089
+      VAULT_PERPLEXITY_PROXY: http://vault:8090
+    volumes:
+      - /mnt/user/appdata/openclaw/home:/home/node
+      - /mnt/remotes/192.168.178.71_openclaw:/home/node/clawd
+      - /mnt/user/appdata/openclaw/docs:/home/node/docs:ro
+      - /mnt/user/appdata/openclaw/config:/config
+      # NOTE: Docker socket intentionally removed for vault isolation.
+      # With the socket, agent-executed code can `docker inspect` the vault
+      # sidecar and extract AGE_SECRET_KEY / plaintext API keys.
+      # If sandbox execution is needed, add a restricted docker-socket-proxy
+      # service (e.g. tecnativa/docker-socket-proxy) with container inspection
+      # and exec disabled.
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev,mode=1777
+    networks:
+      # Internal for vault communication, external for port publishing.
+      # Credentials stay isolated: the gateway has no API keys.
+      - vault-internal
+      - vault-external
+    ports:
+      # Bound to all interfaces for LAN access.
+      # For non-LAN deployments, bind to localhost: "127.0.0.1:18790:18789"
+      - "18790:18789"
+    init: true
+    restart: unless-stopped
+    depends_on:
+      vault:
+        condition: service_healthy
+    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+
+networks:
+  vault-internal:
+    # Internal network: openclaw <-> vault only
+    driver: bridge
+    internal: true
+  vault-external:
+    # External network: vault <-> cloud APIs
+    driver: bridge

@@ -5,6 +5,7 @@
 #   ./scripts/build-and-push.sh                    # Push as :latest
 #   ./scripts/build-and-push.sh --tag 2026-02-01   # Push with specific tag
 #   ./scripts/build-and-push.sh --sandbox-only     # Only push sandbox image
+#   ./scripts/build-and-push.sh --vault            # Also build/push vault sidecar
 
 set -euo pipefail
 
@@ -15,11 +16,13 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REGISTRY="192.168.178.72:5000"
 MAIN_IMAGE="openclaw-hardened"
 SANDBOX_IMAGE="openclaw-sandbox"
+VAULT_IMAGE="openclaw-vault"
 
 # Default tag
 TAG="latest"
 SANDBOX_ONLY=false
 MAIN_ONLY=false
+BUILD_VAULT=false
 
 # Colors
 RED='\033[0;31m'
@@ -41,6 +44,7 @@ Options:
   -t, --tag TAG       Tag for images (default: latest)
   --sandbox-only      Only build/push sandbox image
   --main-only         Only build/push main image
+  --vault             Also build/push vault sidecar image
   --no-cache          Build without cache
   -h, --help          Show this help
 
@@ -66,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --main-only)
             MAIN_ONLY=true
+            shift
+            ;;
+        --vault)
+            BUILD_VAULT=true
             shift
             ;;
         --no-cache)
@@ -143,6 +151,36 @@ build_main() {
     log_info "Main image pushed successfully"
 }
 
+# Build and push vault sidecar image
+build_vault() {
+    log_info "Building vault sidecar image..."
+
+    local vault_dir="${PROJECT_DIR}/vault"
+    if [[ ! -f "${vault_dir}/Dockerfile" ]]; then
+        log_error "vault/Dockerfile not found"
+        exit 1
+    fi
+
+    local local_tag="openclaw-vault:local"
+    local remote_tag="${REGISTRY}/${VAULT_IMAGE}:${TAG}"
+
+    docker build $NO_CACHE -t "$local_tag" "$vault_dir"
+
+    log_info "Tagging: $local_tag -> $remote_tag"
+    docker tag "$local_tag" "$remote_tag"
+
+    log_info "Pushing: $remote_tag"
+    docker push "$remote_tag"
+
+    if [[ "$TAG" != "latest" ]]; then
+        local latest_tag="${REGISTRY}/${VAULT_IMAGE}:latest"
+        docker tag "$local_tag" "$latest_tag"
+        docker push "$latest_tag"
+    fi
+
+    log_info "Vault image pushed successfully"
+}
+
 # Main execution
 log_info "Registry: $REGISTRY"
 log_info "Tag: $TAG"
@@ -158,10 +196,20 @@ else
     build_main
 fi
 
+if [[ "$BUILD_VAULT" == "true" ]]; then
+    echo ""
+    build_vault
+fi
+
 echo ""
 log_info "Build complete!"
 echo ""
 echo "To deploy on TARDIS:"
 echo "  docker pull ${REGISTRY}/${MAIN_IMAGE}:${TAG}"
 echo "  docker pull ${REGISTRY}/${SANDBOX_IMAGE}:${TAG}"
-echo "  docker-compose -f docker-compose.unraid.yml up -d --force-recreate"
+if [[ "$BUILD_VAULT" == "true" ]]; then
+    echo "  docker pull ${REGISTRY}/${VAULT_IMAGE}:${TAG}"
+    echo "  docker compose -f docker-compose.vault.yml up -d --force-recreate"
+else
+    echo "  docker compose -f docker-compose.unraid.yml up -d --force-recreate"
+fi
