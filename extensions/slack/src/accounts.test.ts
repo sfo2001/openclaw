@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/config.js";
-import * as channelTokens from "../vault/channel-tokens.js";
+import type { OpenClawConfig } from "../../../src/config/config.js";
+import * as channelTokens from "../../../src/vault/channel-tokens.js";
 import { resolveSlackAccount } from "./accounts.js";
 
 describe("resolveSlackAccount", () => {
@@ -61,7 +61,7 @@ describe("resolveSlackAccount", () => {
   it("vault tokens take priority over config and env", () => {
     vi.stubEnv("SLACK_BOT_TOKEN", "xoxb-env");
     vi.stubEnv("SLACK_APP_TOKEN", "xapp-env");
-    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name) => {
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name: string) => {
       if (name === "SLACK_BOT_TOKEN") {
         return "xoxb-vault";
       }
@@ -88,7 +88,7 @@ describe("resolveSlackAccount", () => {
   it("vault bot token with config app token", () => {
     vi.stubEnv("SLACK_BOT_TOKEN", "");
     vi.stubEnv("SLACK_APP_TOKEN", "");
-    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name) => {
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name: string) => {
       if (name === "SLACK_BOT_TOKEN") {
         return "xoxb-vault";
       }
@@ -126,7 +126,7 @@ describe("resolveSlackAccount", () => {
   it("vault token for non-default account uses uppercase suffix", () => {
     vi.stubEnv("SLACK_BOT_TOKEN", "");
     vi.stubEnv("SLACK_APP_TOKEN", "");
-    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name) => {
+    vi.spyOn(channelTokens, "getVaultChannelToken").mockImplementation((name: string) => {
       if (name === "SLACK_BOT_TOKEN_WORK") {
         return "xoxb-vault-work";
       }

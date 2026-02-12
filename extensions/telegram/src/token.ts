@@ -46,16 +46,6 @@ export function resolveTelegramToken(
     accountId !== DEFAULT_ACCOUNT_ID ? accountId : DEFAULT_ACCOUNT_ID,
   );
 
-<<<<<<< HEAD:extensions/telegram/src/token.ts
-  // When a non-default accountId is explicitly specified but not found in config,
-  // return empty immediately — do NOT fall through to channel-level defaults,
-  // which would silently route the message via the wrong bot's token.
-  if (accountId !== DEFAULT_ACCOUNT_ID && !accountCfg) {
-    opts.logMissingFile?.(
-      `channels.telegram.accounts: unknown accountId "${accountId}" — not found in config, refusing channel-level fallback`,
-    );
-    return { token: "", source: "none" };
-=======
   // Vault token resolution (highest priority when vault is enabled).
   const vaultSecretName =
     accountId === DEFAULT_ACCOUNT_ID
@@ -64,7 +54,16 @@ export function resolveTelegramToken(
   const vaultToken = getVaultChannelToken(vaultSecretName);
   if (vaultToken) {
     return { token: vaultToken, source: "vault" };
->>>>>>> 7a89ba7222 (feat(vault): add channel token isolation via HTTP endpoint):src/telegram/token.ts
+  }
+
+  // When a non-default accountId is explicitly specified but not found in config,
+  // return empty immediately — do NOT fall through to channel-level defaults,
+  // which would silently route the message via the wrong bot's token.
+  if (accountId !== DEFAULT_ACCOUNT_ID && !accountCfg) {
+    opts.logMissingFile?.(
+      `channels.telegram.accounts: unknown accountId "${accountId}" — not found in config, refusing channel-level fallback`,
+    );
+    return { token: "", source: "none" };
   }
 
   const accountTokenFile = accountCfg?.tokenFile?.trim();
