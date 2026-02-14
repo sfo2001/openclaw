@@ -1,15 +1,18 @@
 # Vault sidecar nginx config template.
 #
-# ${VAR} placeholders are replaced by entrypoint.sh via envsubst.
+# $VAR placeholders are replaced by entrypoint.sh via envsubst.
 # Secrets are injected into proxy_set_header directives at startup.
 #
 # Each server block listens on a dedicated port and proxies to one API,
 # injecting the correct auth header format.
 #
-# Adding a new provider requires updating two files:
-#   1. This file: add a new server block with the provider's port and auth header
-#   2. src/vault/operations.ts: add the entry to VAULT_PROVIDER_DEFAULTS
-# entrypoint.sh auto-discovers ${VAR} placeholders from this template.
+# Adding a new provider:
+#   1. Add an annotated server block below (see @vault annotation format)
+#   2. Run tests — on mismatch, the sync test failure shows the line to add
+#   3. Add the entry to src/vault/operations.ts
+#
+# Annotation format:  # @vault provider=<name> port=<N> secret=<ENV_VAR>
+# entrypoint.sh auto-discovers $VAR placeholders from this template.
 
 user nginx;
 worker_processes 1;
@@ -48,9 +51,8 @@ http {
         }
     }
 
-    # OpenAI API (port 8081)
-    # Target: https://api.openai.com
-    # Auth: Authorization: Bearer <key>
+    # @vault provider=openai port=8081 secret=OPENAI_API_KEY
+    # Target: https://api.openai.com | Auth: Bearer
     server {
         listen 8081;
 
@@ -67,9 +69,8 @@ http {
         }
     }
 
-    # Anthropic API (port 8082)
-    # Target: https://api.anthropic.com
-    # Auth: x-api-key: <key>
+    # @vault provider=anthropic port=8082 secret=ANTHROPIC_API_KEY
+    # Target: https://api.anthropic.com | Auth: x-api-key
     server {
         listen 8082;
 
@@ -85,10 +86,8 @@ http {
         }
     }
 
-    # Deepgram API (port 8083)
-    # Target: https://api.deepgram.com
-    # Auth: Authorization: Token <key>
-    # Supports WebSocket upgrade for real-time streaming
+    # @vault provider=deepgram port=8083 secret=DEEPGRAM_API_KEY
+    # Target: https://api.deepgram.com | Auth: Token (WebSocket upgrade)
     server {
         listen 8083;
 
@@ -104,9 +103,8 @@ http {
         }
     }
 
-    # Google Gemini API (port 8085)
-    # Target: https://generativelanguage.googleapis.com
-    # Auth: x-goog-api-key: <key>
+    # @vault provider=google port=8085 secret=GEMINI_API_KEY
+    # Target: https://generativelanguage.googleapis.com | Auth: x-goog-api-key
     server {
         listen 8085;
 
@@ -139,9 +137,8 @@ http {
         }
     }
 
-    # Groq API (port 8086)
-    # Target: https://api.groq.com
-    # Auth: Authorization: Bearer <key>
+    # @vault provider=groq port=8086 secret=GROQ_API_KEY
+    # Target: https://api.groq.com | Auth: Bearer
     server {
         listen 8086;
 
@@ -162,9 +159,8 @@ http {
         }
     }
 
-    # xAI API (port 8087)
-    # Target: https://api.x.ai
-    # Auth: Authorization: Bearer <key>
+    # @vault provider=xai port=8087 secret=XAI_API_KEY
+    # Target: https://api.x.ai | Auth: Bearer
     server {
         listen 8087;
 
@@ -179,9 +175,8 @@ http {
         }
     }
 
-    # Mistral API (port 8088)
-    # Target: https://api.mistral.ai
-    # Auth: Authorization: Bearer <key>
+    # @vault provider=mistral port=8088 secret=MISTRAL_API_KEY
+    # Target: https://api.mistral.ai | Auth: Bearer
     server {
         listen 8088;
 
@@ -196,9 +191,8 @@ http {
         }
     }
 
-    # Brave Search API (port 8089)
-    # Target: https://api.search.brave.com
-    # Auth: X-Subscription-Token: <key>
+    # @vault provider=brave port=8089 secret=BRAVE_API_KEY
+    # Target: https://api.search.brave.com | Auth: X-Subscription-Token
     server {
         listen 8089;
 
@@ -214,9 +208,8 @@ http {
         }
     }
 
-    # Perplexity API (port 8090)
-    # Target: https://api.perplexity.ai
-    # Auth: Authorization: Bearer <key>
+    # @vault provider=perplexity port=8090 secret=PERPLEXITY_API_KEY
+    # Target: https://api.perplexity.ai | Auth: Bearer
     server {
         listen 8090;
 
@@ -237,12 +230,8 @@ http {
         }
     }
 
-    # Generic OpenAI-compatible API (port 8084)
-    # Target: configurable (Groq, OpenRouter, etc.) — defaults to OpenRouter
-    # Auth: Authorization: Bearer <key>
-    #
-    # To change the target, update proxy_pass and Host header.
-    # Each additional provider needs its own server block + port.
+    # @vault provider=openai-compat port=8084 secret=OPENAI_COMPAT_API_KEY
+    # Target: https://openrouter.ai (configurable) | Auth: Bearer
     server {
         listen 8084;
 
