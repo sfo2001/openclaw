@@ -29,6 +29,8 @@ import {
   providerSecretName,
   resolveAgeSecretKey,
   resolveVaultFilePath,
+  validateProviderName,
+  validateProxyHost,
 } from "../vault/operations.js";
 import { runCommandWithRuntime } from "./cli-utils.js";
 
@@ -222,9 +224,28 @@ export function registerVaultCli(program: Command) {
     .option("--stdin", "Read secret value from stdin (avoids shell history exposure)")
     .option("--no-proxy", "Skip automatic proxy configuration for known providers")
     .option("--proxy-host <host>", "Proxy hostname for auto-configured URLs", "vault")
+    .option("--port <port>", "Proxy listen port (for providers not in the registry)")
+    .option("--provider <name>", "Provider name (for providers not in the registry)")
     .action(async (name: string, value: string | undefined, opts) =>
       runCommandWithRuntime(defaultRuntime, async () => {
         validateSecretName(name);
+
+        // Validate --port / --provider: both must be given together
+        const hasPort = opts.port !== undefined;
+        const hasProvider = opts.provider !== undefined;
+        if (hasPort !== hasProvider) {
+          throw new Error("--port and --provider must be used together.");
+        }
+        if (hasPort) {
+          const port = Number(opts.port);
+          if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            throw new Error(`Invalid port: ${opts.port}. Must be an integer between 1 and 65535.`);
+          }
+        }
+        if (hasProvider) {
+          validateProviderName(opts.provider as string);
+        }
+
         // Resolve value early — before any other stdin usage (e.g. AGE_SECRET_KEY prompt)
         const secretValue = await resolveSecretValue(value, Boolean(opts.stdin));
 
@@ -251,28 +272,51 @@ export function registerVaultCli(program: Command) {
 
         defaultRuntime.log(`${isUpdate ? "Updated" : "Added"} secret: ${name}`);
 
-        // Auto-configure proxy for known providers
+        // Auto-configure proxy
         if (opts.proxy !== false) {
-          const matchingProvider = findProviderBySecretName(name);
-          if (matchingProvider) {
-            const [providerName] = matchingProvider;
-            const proxyUrl = providerProxyUrl(providerName, opts.proxyHost);
-            if (proxyUrl) {
-              const snapshot = await readConfigFileSnapshot();
-              const existingProxies = snapshot.config.vault?.proxies ?? {};
-              if (!existingProxies[providerName]) {
-                const next = {
-                  ...snapshot.config,
-                  vault: {
-                    ...snapshot.config.vault,
-                    proxies: {
-                      ...existingProxies,
-                      [providerName]: proxyUrl,
+          // Explicit --port + --provider: bypass registry, write mapping directly
+          if (hasPort && hasProvider) {
+            validateProxyHost(opts.proxyHost as string);
+            const port = Number(opts.port);
+            const providerName = opts.provider as string;
+            const proxyUrl = `http://${opts.proxyHost}:${port}`;
+            const snapshot = await readConfigFileSnapshot();
+            const existingProxies = snapshot.config.vault?.proxies ?? {};
+            const next = {
+              ...snapshot.config,
+              vault: {
+                ...snapshot.config.vault,
+                proxies: {
+                  ...existingProxies,
+                  [providerName]: proxyUrl,
+                },
+              },
+            };
+            await writeConfigFile(next);
+            defaultRuntime.log(`Configured proxy: ${providerName} -> ${proxyUrl}`);
+          } else {
+            // Registry-based auto-configuration for known providers
+            const matchingProvider = findProviderBySecretName(name);
+            if (matchingProvider) {
+              const [providerName] = matchingProvider;
+              const proxyUrl = providerProxyUrl(providerName, opts.proxyHost);
+              if (proxyUrl) {
+                const snapshot = await readConfigFileSnapshot();
+                const existingProxies = snapshot.config.vault?.proxies ?? {};
+                if (!existingProxies[providerName]) {
+                  const next = {
+                    ...snapshot.config,
+                    vault: {
+                      ...snapshot.config.vault,
+                      proxies: {
+                        ...existingProxies,
+                        [providerName]: proxyUrl,
+                      },
                     },
-                  },
-                };
-                await writeConfigFile(next);
-                defaultRuntime.log(`Auto-configured proxy: ${providerName} -> ${proxyUrl}`);
+                  };
+                  await writeConfigFile(next);
+                  defaultRuntime.log(`Auto-configured proxy: ${providerName} -> ${proxyUrl}`);
+                }
               }
             }
           }
