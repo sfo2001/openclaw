@@ -1041,3 +1041,345 @@ describe("vault add proxy edge cases", () => {
     expect(proxyCall?.[0]?.vault?.proxies?.openai).toBe("http://my-vault:8081");
   });
 });
+
+// ---------------------------------------------------------------------------
+// vault add --port / --provider (custom provider flags)
+// ---------------------------------------------------------------------------
+
+describe("vault add --port / --provider", () => {
+  it("configures proxy for a custom provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_API_KEY",
+      "custom-secret",
+      "--port",
+      "9999",
+      "--provider",
+      "custom-llm",
+    ]);
+
+    // Secret should be stored
+    const secrets = await decryptVault(vaultPath, keypair.identity);
+    expect(secrets.get("CUSTOM_API_KEY")).toBe("custom-secret");
+
+    // Proxy mapping should be written
+    const { writeConfigFile } = await import("../config/config.js");
+    const calls = vi.mocked(writeConfigFile).mock.calls;
+    const proxyCall = calls.find((c) => c[0]?.vault?.proxies?.["custom-llm"]);
+    expect(proxyCall).toBeDefined();
+    expect(proxyCall?.[0]?.vault?.proxies?.["custom-llm"]).toBe("http://vault:9999");
+  });
+
+  it("uses --proxy-host with --port/--provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--port",
+      "8100",
+      "--provider",
+      "my-provider",
+      "--proxy-host",
+      "my-vault",
+    ]);
+
+    const { writeConfigFile } = await import("../config/config.js");
+    const calls = vi.mocked(writeConfigFile).mock.calls;
+    const proxyCall = calls.find((c) => c[0]?.vault?.proxies?.["my-provider"]);
+    expect(proxyCall?.[0]?.vault?.proxies?.["my-provider"]).toBe("http://my-vault:8100");
+  });
+
+  it("overwrites existing proxy entry with --port/--provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: {
+        enabled: true,
+        publicKey: keypair.recipient,
+        proxies: { "custom-llm": "http://vault:1234" },
+      },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--port",
+      "9999",
+      "--provider",
+      "custom-llm",
+    ]);
+
+    // --port/--provider always overwrites (unlike registry-based auto-config)
+    const { writeConfigFile } = await import("../config/config.js");
+    const writtenConfig = vi.mocked(writeConfigFile).mock.calls[0]?.[0];
+    expect(writtenConfig?.vault?.proxies?.["custom-llm"]).toBe("http://vault:9999");
+  });
+
+  it("skips proxy config when --no-proxy is used with --port/--provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--port",
+      "9999",
+      "--provider",
+      "custom-llm",
+      "--no-proxy",
+    ]);
+
+    // Secret stored but no proxy written
+    const secrets = await decryptVault(vaultPath, keypair.identity);
+    expect(secrets.get("CUSTOM_KEY")).toBe("val");
+
+    const { writeConfigFile } = await import("../config/config.js");
+    expect(writeConfigFile).not.toHaveBeenCalled();
+  });
+
+  it("errors when --port is given without --provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--port",
+      "9999",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(
+      /--port and --provider must be used together/,
+    );
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors when --provider is given without --port", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--provider",
+      "custom-llm",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(
+      /--port and --provider must be used together/,
+    );
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors on invalid port: 0", async () => {
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: "age1test" },
+    };
+    await setupMocks(cfg);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "KEY",
+      "val",
+      "--port",
+      "0",
+      "--provider",
+      "test",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(/Invalid port/);
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors on invalid port: 65536", async () => {
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: "age1test" },
+    };
+    await setupMocks(cfg);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "KEY",
+      "val",
+      "--port",
+      "65536",
+      "--provider",
+      "test",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(/Invalid port/);
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors on non-numeric port", async () => {
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: "age1test" },
+    };
+    await setupMocks(cfg);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "KEY",
+      "val",
+      "--port",
+      "abc",
+      "--provider",
+      "test",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(/Invalid port/);
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors on invalid provider name", async () => {
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: "age1test" },
+    };
+    await setupMocks(cfg);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "KEY",
+      "val",
+      "--port",
+      "9999",
+      "--provider",
+      "Invalid-Name",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(/Invalid provider name/);
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("errors on invalid proxy host with --port/--provider", async () => {
+    const keypair = await generateKeypair();
+
+    const cfg: OpenClawConfig = {
+      vault: { enabled: true, publicKey: keypair.recipient },
+    };
+    await setupMocks(cfg, keypair);
+    writeConfig(cfg);
+
+    await encryptVault(new Map(), keypair.recipient, vaultPath);
+
+    const program = await createVaultProgram();
+
+    await program.parseAsync([
+      "node",
+      "test",
+      "vault",
+      "add",
+      "CUSTOM_KEY",
+      "val",
+      "--port",
+      "9999",
+      "--provider",
+      "custom-llm",
+      "--proxy-host",
+      "evil.com/path#",
+    ]);
+
+    const { defaultRuntime } = await import("../runtime.js");
+    expect(vi.mocked(defaultRuntime.error).mock.calls[0]?.[0]).toMatch(/Invalid proxy hostname/);
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+});
