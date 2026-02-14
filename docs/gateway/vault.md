@@ -272,10 +272,29 @@ for providers that have models but no configured API key.
 
 ### Adding a new provider
 
-1. Add a `server` block to `vault/nginx.conf.template` with a new port and `${SECRET_VAR}` placeholder
-2. Add the entry to `VAULT_PROVIDER_DEFAULTS` in `src/vault/operations.ts`
-3. `openclaw vault add <SECRET_NAME> <value>`
-4. Add the proxy mapping: set `vault.proxies.<provider>` in config
+1. Add an annotated `server` block to `vault/nginx.conf.template`:
+   ```nginx
+   # @vault provider=<name> port=<N> secret=<ENV_VAR>
+   # Target: https://api.example.com | Auth: Bearer
+   server {
+       listen <N>;
+       ...
+   }
+   ```
+2. Run `pnpm test -- --run src/vault/operations.test.ts` -- on mismatch,
+   the sync test failure shows the `VAULT_PROVIDER_DEFAULTS` line to add
+3. Add the entry to `VAULT_PROVIDER_DEFAULTS` in `src/vault/operations.ts`
+4. `openclaw vault add <SECRET_NAME> <value>`
+5. Add the proxy mapping: set `vault.proxies.<provider>` in config
+
+For providers not in the registry, use `--port` and `--provider` with `vault add`:
+
+```bash
+openclaw vault add CUSTOM_KEY val --port 9999 --provider custom-llm
+```
+
+NOTE: `--port`/`--provider` always writes (or overwrites) the proxy entry in config.
+The registry-based auto-configuration only writes if no entry exists yet.
 
 ## Non-Docker usage
 
@@ -311,22 +330,23 @@ provide API keys through other means (environment variables, config).
 
 ## CLI reference
 
-| Command                         | Needs secret key?  | Description                        |
-| ------------------------------- | ------------------ | ---------------------------------- |
-| `vault init`                    | No                 | Generate keypair, create vault.age |
-| `vault init --force`            | No                 | Overwrite existing vault           |
-| `vault status`                  | No                 | Show vault state                   |
-| `vault add <name> [value]`      | Yes                | Add/update a secret                |
-| `vault add --stdin`             | Yes                | Read value from stdin pipe         |
-| `vault add --no-proxy`          | Yes                | Add without auto proxy config      |
-| `vault add --proxy-host <host>` | Yes                | Override proxy hostname            |
-| `vault remove <name>`           | Yes                | Remove a secret                    |
-| `vault list`                    | Yes                | List secret names                  |
-| `vault list --reveal`           | Yes                | Show partially masked values       |
-| `vault list --json`             | Yes                | JSON output                        |
-| `vault migrate`                 | Yes (or auto-init) | Migrate from plaintext config      |
-| `vault migrate --dry-run`       | No                 | Preview migration                  |
-| `vault migrate --proxy-host`    | Yes (or auto-init) | Override proxy hostname            |
+| Command                                  | Needs secret key?  | Description                          |
+| ---------------------------------------- | ------------------ | ------------------------------------ |
+| `vault init`                             | No                 | Generate keypair, create vault.age   |
+| `vault init --force`                     | No                 | Overwrite existing vault             |
+| `vault status`                           | No                 | Show vault state                     |
+| `vault add <name> [value]`               | Yes                | Add/update a secret                  |
+| `vault add --stdin`                      | Yes                | Read value from stdin pipe           |
+| `vault add --no-proxy`                   | Yes                | Add without auto proxy config        |
+| `vault add --proxy-host <host>`          | Yes                | Override proxy hostname              |
+| `vault add --port <N> --provider <name>` | Yes                | Add secret for non-registry provider |
+| `vault remove <name>`                    | Yes                | Remove a secret                      |
+| `vault list`                             | Yes                | List secret names                    |
+| `vault list --reveal`                    | Yes                | Show partially masked values         |
+| `vault list --json`                      | Yes                | JSON output                          |
+| `vault migrate`                          | Yes (or auto-init) | Migrate from plaintext config        |
+| `vault migrate --dry-run`                | No                 | Preview migration                    |
+| `vault migrate --proxy-host`             | Yes (or auto-init) | Override proxy hostname              |
 
 ## Troubleshooting
 

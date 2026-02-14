@@ -411,44 +411,135 @@ describe("findProviderBySecretName", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Template ↔ registry sync test
+// Template @vault annotation ↔ registry sync test
 // ---------------------------------------------------------------------------
 
-describe("nginx.conf.template ↔ VAULT_PROVIDER_DEFAULTS sync", () => {
-  const TEMPLATE_PATH = path.resolve(__dirname, "../../vault/nginx.conf.template");
-  const UPPERCASE_VAR_RE = /\$\{([A-Z][A-Z0-9_]*)\}/g;
+type VaultAnnotation = {
+  provider: string;
+  port: number;
+  secret: string;
+};
 
-  function extractTemplateVars(): Set<string> {
-    const template = fs.readFileSync(TEMPLATE_PATH, "utf-8");
-    const vars = new Set<string>();
-    for (const line of template.split("\n")) {
-      // Skip comment lines — they may contain placeholder examples like ${VAR}
-      if (line.trimStart().startsWith("#")) {
-        continue;
+const TEMPLATE_PATH = path.resolve(__dirname, "../../vault/nginx.conf.template");
+const ANNOTATION_RE = /#\s*@vault\s+provider=(\S+)\s+port=(\d+)\s+secret=(\S+)/;
+
+function parseAnnotations(): VaultAnnotation[] {
+  const template = fs.readFileSync(TEMPLATE_PATH, "utf-8");
+  const annotations: VaultAnnotation[] = [];
+  for (const line of template.split("\n")) {
+    const m = ANNOTATION_RE.exec(line);
+    if (m) {
+      annotations.push({
+        provider: m[1],
+        port: Number(m[2]),
+        secret: m[3],
+      });
+    }
+  }
+  return annotations;
+}
+
+function extractListenPorts(): Map<string, number> {
+  const template = fs.readFileSync(TEMPLATE_PATH, "utf-8");
+  const lines = template.split("\n");
+  const ports = new Map<string, number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const annotMatch = ANNOTATION_RE.exec(lines[i]);
+    if (!annotMatch) {
+      continue;
+    }
+    const provider = annotMatch[1];
+    // Find the next `listen <port>;` line after the annotation
+    for (let j = i + 1; j < lines.length; j++) {
+      const listenMatch = /^\s*listen\s+(\d+)\s*;/.exec(lines[j]);
+      if (listenMatch) {
+        ports.set(provider, Number(listenMatch[1]));
+        break;
       }
-      let match: RegExpExecArray | null;
-      while ((match = UPPERCASE_VAR_RE.exec(line)) !== null) {
-        vars.add(match[1]);
+      // Stop if we hit another annotation (shouldn't happen, but safety)
+      if (ANNOTATION_RE.test(lines[j])) {
+        break;
       }
     }
-    return vars;
   }
+  return ports;
+}
 
-  it("every registry secretName has a matching ${VAR} in the template", () => {
-    const templateVars = extractTemplateVars();
-    const registrySecrets = Object.values(VAULT_PROVIDER_DEFAULTS).map((e) => e.secretName);
+describe("nginx.conf.template @vault annotations ↔ VAULT_PROVIDER_DEFAULTS sync", () => {
+  const annotations = parseAnnotations();
+  const registryEntries = Object.entries(VAULT_PROVIDER_DEFAULTS);
 
-    const missingFromTemplate = registrySecrets.filter((s) => !templateVars.has(s));
-    expect(missingFromTemplate).toEqual([]);
+  it("has at least one annotation (guard against broken parsing)", () => {
+    expect(annotations.length).toBeGreaterThan(0);
   });
 
-  it("every ${UPPER_CASE_VAR} in the template has a registry entry", () => {
-    const templateVars = extractTemplateVars();
-    const registrySecrets = new Set(
-      Object.values(VAULT_PROVIDER_DEFAULTS).map((e) => e.secretName),
-    );
+  it("every annotated provider has a matching VAULT_PROVIDER_DEFAULTS entry", () => {
+    const missing: string[] = [];
+    for (const ann of annotations) {
+      const entry = VAULT_PROVIDER_DEFAULTS[ann.provider];
+      if (!entry) {
+        missing.push(
+          `Missing VAULT_PROVIDER_DEFAULTS entry for annotated provider "${ann.provider}".\n` +
+            `  Add to src/vault/operations.ts:\n` +
+            `    "${ann.provider}": { port: ${ann.port}, secretName: "${ann.secret}" },`,
+        );
+      } else {
+        if (entry.port !== ann.port) {
+          missing.push(
+            `Port mismatch for "${ann.provider}": annotation port=${ann.port}, registry port=${entry.port}`,
+          );
+        }
+        if (entry.secretName !== ann.secret) {
+          missing.push(
+            `Secret mismatch for "${ann.provider}": annotation secret=${ann.secret}, registry secretName=${entry.secretName}`,
+          );
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
 
-    const missingFromRegistry = [...templateVars].filter((v) => !registrySecrets.has(v));
-    expect(missingFromRegistry).toEqual([]);
+  it("every VAULT_PROVIDER_DEFAULTS entry has a matching @vault annotation", () => {
+    const annotatedProviders = new Set(annotations.map((a) => a.provider));
+    const missing: string[] = [];
+    for (const [name, entry] of registryEntries) {
+      if (!annotatedProviders.has(name)) {
+        missing.push(
+          `Registry entry "${name}" (port ${entry.port}) has no @vault annotation in nginx.conf.template.\n` +
+            `  Add to vault/nginx.conf.template before the server block:\n` +
+            `    # @vault provider=${name} port=${entry.port} secret=${entry.secretName}`,
+        );
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("annotation port matches the listen directive in the server block", () => {
+    const listenPorts = extractListenPorts();
+    const mismatches: string[] = [];
+    for (const ann of annotations) {
+      const listenPort = listenPorts.get(ann.provider);
+      if (listenPort === undefined) {
+        mismatches.push(`No listen directive found after @vault annotation for "${ann.provider}"`);
+      } else if (listenPort !== ann.port) {
+        mismatches.push(
+          `Port mismatch for "${ann.provider}": @vault port=${ann.port}, listen ${listenPort}`,
+        );
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("has no duplicate annotations", () => {
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+    for (const ann of annotations) {
+      if (seen.has(ann.provider)) {
+        duplicates.push(ann.provider);
+      }
+      seen.add(ann.provider);
+    }
+    expect(duplicates).toEqual([]);
   });
 });

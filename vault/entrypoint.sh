@@ -4,12 +4,12 @@
 # Expects:
 #   AGE_SECRET_KEY          - age private key (from .env on host, 0600 root-owned)
 #   /etc/vault.age          - age-encrypted secrets file (bind-mounted, read-only)
-#   /etc/nginx/nginx.conf.template - nginx config template with ${VAR} placeholders
+#   /etc/nginx/nginx.conf.template - nginx config template with $VAR placeholders
 #   /run/secrets/           - tmpfs mount (volatile, never persisted to disk)
 #
 # Secret variables are discovered dynamically from the nginx template.
 # Adding a new provider only requires editing two files:
-#   1. vault/nginx.conf.template: add a server block with ${SECRET_VAR} placeholder
+#   1. vault/nginx.conf.template: add a server block with $SECRET_VAR placeholder
 #   2. src/vault/operations.ts: add the entry to VAULT_PROVIDER_DEFAULTS
 set -eu
 

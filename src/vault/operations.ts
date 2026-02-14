@@ -263,6 +263,34 @@ export function providerSecretName(provider: string): string | undefined {
 const VALID_HOSTNAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 /**
+ * Validate a proxy hostname (SSRF prevention).
+ * Throws with a user-friendly message if the hostname is invalid.
+ */
+export function validateProxyHost(proxyHost: string): void {
+  if (!VALID_HOSTNAME.test(proxyHost)) {
+    throw new Error(
+      `Invalid proxy hostname: ${JSON.stringify(proxyHost)}\n` +
+        "Hostnames must start with an alphanumeric character and contain only [a-zA-Z0-9._-].",
+    );
+  }
+}
+
+const VALID_PROVIDER_NAME = /^[a-z][a-z0-9_-]*$/;
+
+/**
+ * Validate a provider name for use in config keys.
+ * Throws with a user-friendly message if the name is invalid.
+ */
+export function validateProviderName(name: string): void {
+  if (!VALID_PROVIDER_NAME.test(name)) {
+    throw new Error(
+      `Invalid provider name: ${JSON.stringify(name)}\n` +
+        "Provider names must match [a-z][a-z0-9_-]* (e.g. custom-llm, openai).",
+    );
+  }
+}
+
+/**
  * Build the default proxy URL for a known provider.
  */
 export function providerProxyUrl(provider: string, proxyHost = "vault"): string | undefined {
@@ -270,12 +298,7 @@ export function providerProxyUrl(provider: string, proxyHost = "vault"): string 
   if (!entry) {
     return undefined;
   }
-  if (!VALID_HOSTNAME.test(proxyHost)) {
-    throw new Error(
-      `Invalid proxy hostname: ${JSON.stringify(proxyHost)}\n` +
-        "Hostnames must start with an alphanumeric character and contain only [a-zA-Z0-9._-].",
-    );
-  }
+  validateProxyHost(proxyHost);
   return `http://${proxyHost}:${entry.port}`;
 }
 
