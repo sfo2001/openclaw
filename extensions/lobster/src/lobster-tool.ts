@@ -53,12 +53,18 @@ async function runLobsterSubprocessOnce(params: {
   cwd: string;
   timeoutMs: number;
   maxStdoutBytes: number;
+  extraEnv?: Record<string, string>;
 }) {
   const { execPath, argv, cwd } = params;
   const timeoutMs = Math.max(200, params.timeoutMs);
   const maxStdoutBytes = Math.max(1024, params.maxStdoutBytes);
 
   const env = { ...process.env, LOBSTER_MODE: "tool" } as Record<string, string | undefined>;
+  if (params.extraEnv) {
+    for (const [k, v] of Object.entries(params.extraEnv)) {
+      env[k] ??= v;
+    }
+  }
   const nodeOptions = env.NODE_OPTIONS ?? "";
   if (nodeOptions.includes("--inspect")) {
     delete env.NODE_OPTIONS;
@@ -235,6 +241,10 @@ function buildLobsterArgv(action: string, params: Record<string, unknown>): stri
 }
 
 export function createLobsterTool(api: OpenClawPluginApi) {
+  const gatewayPort = api.config.gateway?.port ?? 18789;
+  const gatewayUrl = `http://localhost:${gatewayPort}`;
+  const gatewayToken = api.config.gateway?.auth?.token;
+
   return {
     name: "lobster",
     label: "Lobster Workflow",
@@ -298,12 +308,18 @@ export function createLobsterTool(api: OpenClawPluginApi) {
         api.logger.debug(`lobster plugin runtime=${api.runtime.version}`);
       }
 
+      const extraEnv: Record<string, string> = { CLAWD_URL: gatewayUrl };
+      if (typeof gatewayToken === "string" && gatewayToken) {
+        extraEnv.CLAWD_TOKEN = gatewayToken;
+      }
+
       const { stdout } = await runLobsterSubprocessOnce({
         execPath,
         argv,
         cwd,
         timeoutMs,
         maxStdoutBytes,
+        extraEnv,
       });
 
       const envelope = parseEnvelope(stdout);
