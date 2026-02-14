@@ -229,6 +229,33 @@ function parseEnvelope(stdout: string): LobsterEnvelope {
   throw new Error("lobster returned invalid JSON envelope");
 }
 
+// Run-once cooldown guard: prevents the model from retrying the same pipeline
+// in a tight loop when upstream steps fail silently, burning tokens.
+const recentRuns = new Map<string, number>();
+const RUN_COOLDOWN_MS = 60_000;
+
+function checkRunCooldown(pipeline: string): string | null {
+  const now = Date.now();
+
+  // Evict stale entries (> 2x cooldown)
+  for (const [key, ts] of recentRuns) {
+    if (now - ts > RUN_COOLDOWN_MS * 2) recentRuns.delete(key);
+  }
+
+  const lastRun = recentRuns.get(pipeline);
+  if (lastRun !== undefined && now - lastRun < RUN_COOLDOWN_MS) {
+    const waitSec = Math.ceil((RUN_COOLDOWN_MS - (now - lastRun)) / 1000);
+    return (
+      `Pipeline "${pipeline}" was already invoked ${Math.floor((now - lastRun) / 1000)}s ago. ` +
+      `Retry cooldown: ${waitSec}s remaining. ` +
+      `Do not retry -- investigate why the previous run failed or use "resume" to continue.`
+    );
+  }
+
+  recentRuns.set(pipeline, now);
+  return null;
+}
+
 export function createLobsterTool(api: OpenClawPluginApi) {
   return {
     name: "lobster",
@@ -279,6 +306,30 @@ export function createLobsterTool(api: OpenClawPluginApi) {
       const maxStdoutBytes =
         typeof params.maxStdoutBytes === "number" ? params.maxStdoutBytes : 512_000;
 
+      // Run-once cooldown for "run" actions: prevent the model from retrying
+      // a pipeline in a tight loop when upstream steps fail silently.
+      if (action === "run") {
+        const pipeline = typeof params.pipeline === "string" ? params.pipeline.trim() : "";
+        if (pipeline) {
+          const cooldownMsg = checkRunCooldown(pipeline);
+          if (cooldownMsg) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    { ok: false, error: { type: "cooldown", message: cooldownMsg } },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+              details: { ok: false, error: { type: "cooldown", message: cooldownMsg } },
+            };
+          }
+        }
+      }
+
       const argv = (() => {
         if (action === "run") {
           const pipeline = typeof params.pipeline === "string" ? params.pipeline : "";
@@ -327,3 +378,5 @@ export function createLobsterTool(api: OpenClawPluginApi) {
     },
   };
 }
+
+export const __testing = { recentRuns };

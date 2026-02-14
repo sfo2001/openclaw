@@ -16,6 +16,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 let createLobsterTool: typeof import("./lobster-tool.js").createLobsterTool;
+let __testing: typeof import("./lobster-tool.js").__testing;
 
 function fakeApi(overrides: Partial<OpenClawPluginApi> = {}): OpenClawPluginApi {
   return {
@@ -62,7 +63,7 @@ describe("lobster plugin tool", () => {
   let lobsterBinPath = "";
 
   beforeAll(async () => {
-    ({ createLobsterTool } = await import("./lobster-tool.js"));
+    ({ createLobsterTool, __testing } = await import("./lobster-tool.js"));
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-lobster-plugin-"));
     lobsterBinPath = path.join(tempDir, process.platform === "win32" ? "lobster.cmd" : "lobster");
@@ -81,6 +82,7 @@ describe("lobster plugin tool", () => {
   });
 
   beforeEach(() => {
+    __testing.recentRuns.clear();
     spawnState.queue.length = 0;
     spawnState.spawn.mockReset();
     spawnState.spawn.mockImplementation(() => {
