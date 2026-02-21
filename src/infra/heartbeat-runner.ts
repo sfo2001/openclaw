@@ -36,6 +36,7 @@ import {
   saveSessionStore,
   updateSessionStore,
 } from "../config/sessions.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import type { AgentDefaultsConfig } from "../config/types.agent-defaults.js";
 import { resolveCronSession } from "../cron/isolated-agent/session.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -112,7 +113,7 @@ const DEFAULT_HEARTBEAT_TARGET = "none";
 const HEARTBEAT_SESSION_PREFIX = "heartbeat";
 
 /** Main-session aliases that opt out of heartbeat isolation. */
-const MAIN_SESSION_ALIASES = new Set(["main", "shared", "global"]);
+const MAIN_SESSION_ALIASES = new Set(["main"]);
 
 type HeartbeatConfig = AgentDefaultsConfig["heartbeat"];
 
@@ -128,18 +129,12 @@ type HeartbeatSessionResult = {
   sessionKey: string;
   mainSessionKey: string;
   storePath: string;
-  store: Record<string, import("../config/sessions/types.js").SessionEntry>;
-  entry: import("../config/sessions/types.js").SessionEntry | undefined;
+  store: Record<string, SessionEntry>;
+  entry: SessionEntry | undefined;
   isolated: boolean;
 };
 
 // Prompt used when an async exec has completed and the result should be relayed to the user.
-// This overrides the standard heartbeat prompt to ensure the model responds with the exec result
-// instead of just "HEARTBEAT_OK".
-const EXEC_EVENT_PROMPT =
-  "An async command you ran earlier has completed. The result is shown in the system messages above. " +
-  "Please relay the command output to the user in a helpful way. If the command succeeded, share the relevant output. " +
-  "If it failed, explain what went wrong.";
 export { isCronSystemEvent };
 
 type HeartbeatAgentState = {
@@ -622,7 +617,6 @@ export async function runHeartbeatOnce(opts: {
     return { status: "skipped", reason: preflight.skipReason };
   }
   const { entry, sessionKey, mainSessionKey, storePath, isolated } = preflight.session;
-  const { isCronEventReason, pendingEventEntries } = preflight;
   // For delivery target and updatedAt restoration, always use the main session entry
   // so that isolated heartbeat runs don't lose the last-channel/last-to routing data.
   const mainEntry = isolated ? (preflight.session.store[mainSessionKey] ?? entry) : entry;
@@ -751,7 +745,7 @@ export async function runHeartbeatOnce(opts: {
     // When running in an isolated session, the agent turn does not drain the main
     // session's system event queue (events are keyed by session). Drain explicitly
     // so the same events are not re-injected on the next heartbeat cycle.
-    if (isolated && shouldInspectPendingEvents) {
+    if (isolated && preflight.shouldInspectPendingEvents) {
       drainSystemEventEntries(mainSessionKey);
     }
 

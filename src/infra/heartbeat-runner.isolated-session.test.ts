@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { telegramPlugin } from "../../extensions/telegram/src/channel.js";
 import { setTelegramRuntime } from "../../extensions/telegram/src/runtime.js";
 import * as replyModule from "../auto-reply/reply.js";
@@ -31,6 +31,12 @@ beforeEach(() => {
     createTestRegistry([{ pluginId: "telegram", plugin: telegramPlugin, source: "test" }]),
   );
   resetSystemEventsForTest();
+});
+
+afterAll(async () => {
+  if (fixtureRoot) {
+    await fs.rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 afterEach(() => {
@@ -129,8 +135,8 @@ describe("heartbeat session isolation (default behavior)", () => {
     }
   });
 
-  it('session: "shared" uses the main session key', async () => {
-    const tmpDir = await createCaseDir("isolated-shared-opt-in");
+  it('session: "shared" produces a custom session key (not main)', async () => {
+    const tmpDir = await createCaseDir("isolated-shared-custom");
     const storePath = path.join(tmpDir, "sessions.json");
     const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
     try {
@@ -144,7 +150,9 @@ describe("heartbeat session isolation (default behavior)", () => {
 
       expect(replySpy).toHaveBeenCalledTimes(1);
       const calledCtx = replySpy.mock.calls[0]?.[0] as { SessionKey?: string };
-      expect(calledCtx.SessionKey).toBe(mainSessionKey);
+      // "shared" is treated as a custom session name, not a main-session alias
+      expect(calledCtx.SessionKey).not.toBe(mainSessionKey);
+      expect(calledCtx.SessionKey).toContain("shared");
     } finally {
       replySpy.mockRestore();
     }
