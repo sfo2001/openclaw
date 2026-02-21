@@ -234,7 +234,8 @@ export type AgentDefaultsConfig = {
     };
     /** Heartbeat model override (provider/model). */
     model?: string;
-    /** Session key for heartbeat runs ("main" or explicit session key). */
+    /** Session key for heartbeat runs. Omit for isolated session (default, prevents
+     * main session context pollution). Set to "main" or "shared" to use the main session. */
     session?: string;
     /** Delivery target ("last", "none", or a channel id). */
     target?: "last" | "none" | ChannelId;

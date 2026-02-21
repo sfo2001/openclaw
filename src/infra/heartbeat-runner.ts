@@ -80,7 +80,11 @@ import {
   resolveHeartbeatDeliveryTarget,
   resolveHeartbeatSenderContext,
 } from "./outbound/targets.js";
-import { peekSystemEventEntries } from "./system-events.js";
+import {
+  drainSystemEventEntries,
+  enqueueSystemEvent,
+  peekSystemEventEntries,
+} from "./system-events.js";
 
 export type HeartbeatDeps = OutboundSendDeps &
   ChannelHeartbeatDeps & {
@@ -99,12 +103,43 @@ export {
   type HeartbeatSummary,
 } from "./heartbeat-summary.js";
 
-type HeartbeatConfig = AgentDefaultsConfig["heartbeat"];
 type HeartbeatAgent = {
   agentId: string;
   heartbeat?: HeartbeatConfig;
 };
 
+const DEFAULT_HEARTBEAT_TARGET = "none";
+const HEARTBEAT_SESSION_PREFIX = "heartbeat";
+
+/** Main-session aliases that opt out of heartbeat isolation. */
+const MAIN_SESSION_ALIASES = new Set(["main", "shared", "global"]);
+
+type HeartbeatConfig = AgentDefaultsConfig["heartbeat"];
+
+function shouldIsolateHeartbeat(heartbeat?: HeartbeatConfig, forcedSessionKey?: string): boolean {
+  if (forcedSessionKey) {
+    return false;
+  }
+  const trimmed = heartbeat?.session?.trim() ?? "";
+  return !trimmed; // Only unset/empty = isolated (new default)
+}
+
+type HeartbeatSessionResult = {
+  sessionKey: string;
+  mainSessionKey: string;
+  storePath: string;
+  store: Record<string, import("../config/sessions/types.js").SessionEntry>;
+  entry: import("../config/sessions/types.js").SessionEntry | undefined;
+  isolated: boolean;
+};
+
+// Prompt used when an async exec has completed and the result should be relayed to the user.
+// This overrides the standard heartbeat prompt to ensure the model responds with the exec result
+// instead of just "HEARTBEAT_OK".
+const EXEC_EVENT_PROMPT =
+  "An async command you ran earlier has completed. The result is shown in the system messages above. " +
+  "Please relay the command output to the user in a helpful way. If the command succeeded, share the relevant output. " +
+  "If it failed, explain what went wrong.";
 export { isCronSystemEvent };
 
 type HeartbeatAgentState = {
@@ -173,7 +208,7 @@ function resolveHeartbeatSession(
   agentId?: string,
   heartbeat?: HeartbeatConfig,
   forcedSessionKey?: string,
-) {
+): HeartbeatSessionResult {
   const sessionCfg = cfg.session;
   const scope = sessionCfg?.scope ?? "per-sender";
   const resolvedAgentId = normalizeAgentId(agentId ?? resolveDefaultAgentId(cfg));
@@ -186,8 +221,21 @@ function resolveHeartbeatSession(
   const store = loadSessionStore(storePath);
   const mainEntry = store[mainSessionKey];
 
+  const asResult = (
+    sessionKey: string,
+    entry: typeof mainEntry,
+    isolated: boolean,
+  ): HeartbeatSessionResult => ({
+    sessionKey,
+    mainSessionKey,
+    storePath,
+    store,
+    entry,
+    isolated,
+  });
+
   if (scope === "global") {
-    return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
+    return asResult(mainSessionKey, mainEntry, false);
   }
 
   const forced = forcedSessionKey?.trim();
@@ -205,24 +253,27 @@ function resolveHeartbeatSession(
     if (forcedCanonical !== "global") {
       const sessionAgentId = resolveAgentIdFromSessionKey(forcedCanonical);
       if (sessionAgentId === normalizeAgentId(resolvedAgentId)) {
-        return {
-          sessionKey: forcedCanonical,
-          storePath,
-          store,
-          entry: store[forcedCanonical],
-        };
+        return asResult(forcedCanonical, store[forcedCanonical], false);
       }
     }
   }
 
-  const trimmed = heartbeat?.session?.trim() ?? "";
-  if (!trimmed) {
-    return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
+  // Isolation: when no session key is configured (empty/unset), use a dedicated
+  // heartbeat session to prevent the main session from accumulating heartbeat turns.
+  if (shouldIsolateHeartbeat(heartbeat, forcedSessionKey)) {
+    const isolatedKey = toAgentStoreSessionKey({
+      agentId: resolvedAgentId,
+      requestKey: HEARTBEAT_SESSION_PREFIX,
+      mainKey: cfg.session?.mainKey,
+    });
+    const isolatedEntry = store[isolatedKey];
+    return asResult(isolatedKey, isolatedEntry, true);
   }
 
-  const normalized = trimmed.toLowerCase();
-  if (normalized === "main" || normalized === "global") {
-    return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
+  const trimmed = heartbeat?.session?.trim() ?? "";
+  const normalizedAlias = trimmed.toLowerCase();
+  if (MAIN_SESSION_ALIASES.has(normalizedAlias)) {
+    return asResult(mainSessionKey, mainEntry, false);
   }
 
   const candidate = toAgentStoreSessionKey({
@@ -238,16 +289,11 @@ function resolveHeartbeatSession(
   if (canonical !== "global") {
     const sessionAgentId = resolveAgentIdFromSessionKey(canonical);
     if (sessionAgentId === normalizeAgentId(resolvedAgentId)) {
-      return {
-        sessionKey: canonical,
-        storePath,
-        store,
-        entry: store[canonical],
-      };
+      return asResult(canonical, store[canonical], false);
     }
   }
 
-  return { sessionKey: mainSessionKey, storePath, store, entry: mainEntry };
+  return asResult(mainSessionKey, mainEntry, false);
 }
 
 function resolveHeartbeatReasoningPayloads(
@@ -426,7 +472,10 @@ async function resolveHeartbeatPreflight(params: {
     params.heartbeat,
     params.forcedSessionKey,
   );
-  const pendingEventEntries = peekSystemEventEntries(session.sessionKey);
+  // Always peek system events from the main session queue, even when the heartbeat
+  // agent turn runs in an isolated session. Events (exec completions, cron) are
+  // enqueued against the main session key.
+  const pendingEventEntries = peekSystemEventEntries(session.mainSessionKey);
   const hasTaggedCronEvents = pendingEventEntries.some((event) =>
     event.contextKey?.startsWith("cron:"),
   );
@@ -572,33 +621,13 @@ export async function runHeartbeatOnce(opts: {
     });
     return { status: "skipped", reason: preflight.skipReason };
   }
-  const { entry, sessionKey, storePath } = preflight.session;
-  const previousUpdatedAt = entry?.updatedAt;
-
-  // When isolatedSession is enabled, create a fresh session via the same
-  // pattern as cron sessionTarget: "isolated". This gives the heartbeat
-  // a new session ID (empty transcript) each run, avoiding the cost of
-  // sending the full conversation history (~100K tokens) to the LLM.
-  // Delivery routing still uses the main session entry (lastChannel, lastTo).
-  const useIsolatedSession = heartbeat?.isolatedSession === true;
-  let runSessionKey = sessionKey;
-  let runStorePath = storePath;
-  if (useIsolatedSession) {
-    const isolatedKey = `${sessionKey}:heartbeat`;
-    const cronSession = resolveCronSession({
-      cfg,
-      sessionKey: isolatedKey,
-      agentId,
-      nowMs: startedAt,
-      forceNew: true,
-    });
-    cronSession.store[isolatedKey] = cronSession.sessionEntry;
-    await saveSessionStore(cronSession.storePath, cronSession.store);
-    runSessionKey = isolatedKey;
-    runStorePath = cronSession.storePath;
-  }
-
-  const delivery = resolveHeartbeatDeliveryTarget({ cfg, entry, heartbeat });
+  const { entry, sessionKey, mainSessionKey, storePath, isolated } = preflight.session;
+  const { isCronEventReason, pendingEventEntries } = preflight;
+  // For delivery target and updatedAt restoration, always use the main session entry
+  // so that isolated heartbeat runs don't lose the last-channel/last-to routing data.
+  const mainEntry = isolated ? (preflight.session.store[mainSessionKey] ?? entry) : entry;
+  const previousUpdatedAt = mainEntry?.updatedAt;
+  const delivery = resolveHeartbeatDeliveryTarget({ cfg, entry: mainEntry, heartbeat });
   const heartbeatAccountId = heartbeat?.accountId?.trim();
   if (delivery.reason === "unknown-account") {
     log.warn("heartbeat: unknown accountId", {
@@ -718,6 +747,14 @@ export async function runHeartbeatOnce(opts: {
         }
       : { isHeartbeat: true, suppressToolErrorWarnings, bootstrapContextMode };
     const replyResult = await getReplyFromConfig(ctx, replyOpts, cfg);
+
+    // When running in an isolated session, the agent turn does not drain the main
+    // session's system event queue (events are keyed by session). Drain explicitly
+    // so the same events are not re-injected on the next heartbeat cycle.
+    if (isolated && shouldInspectPendingEvents) {
+      drainSystemEventEntries(mainSessionKey);
+    }
+
     const replyPayload = resolveHeartbeatReplyPayload(replyResult);
     const includeReasoning = heartbeat?.includeReasoning === true;
     const reasoningPayloads = includeReasoning
@@ -727,7 +764,7 @@ export async function runHeartbeatOnce(opts: {
     if (!replyPayload || !hasOutboundReplyContent(replyPayload)) {
       await restoreHeartbeatUpdatedAt({
         storePath,
-        sessionKey,
+        sessionKey: mainSessionKey,
         updatedAt: previousUpdatedAt,
       });
       // Prune the transcript to remove HEARTBEAT_OK turns
@@ -763,7 +800,7 @@ export async function runHeartbeatOnce(opts: {
     if (shouldSkipMain && reasoningPayloads.length === 0) {
       await restoreHeartbeatUpdatedAt({
         storePath,
-        sessionKey,
+        sessionKey: mainSessionKey,
         updatedAt: previousUpdatedAt,
       });
       // Prune the transcript to remove HEARTBEAT_OK turns
@@ -786,9 +823,11 @@ export async function runHeartbeatOnce(opts: {
     // Suppress duplicate heartbeats (same payload) within a short window.
     // This prevents "nagging" when nothing changed but the model repeats the same items.
     const prevHeartbeatText =
-      typeof entry?.lastHeartbeatText === "string" ? entry.lastHeartbeatText : "";
+      typeof mainEntry?.lastHeartbeatText === "string" ? mainEntry.lastHeartbeatText : "";
     const prevHeartbeatAt =
-      typeof entry?.lastHeartbeatSentAt === "number" ? entry.lastHeartbeatSentAt : undefined;
+      typeof mainEntry?.lastHeartbeatSentAt === "number"
+        ? mainEntry.lastHeartbeatSentAt
+        : undefined;
     const isDuplicateMain =
       !shouldSkipMain &&
       !mediaUrls.length &&
@@ -800,7 +839,7 @@ export async function runHeartbeatOnce(opts: {
     if (isDuplicateMain) {
       await restoreHeartbeatUpdatedAt({
         storePath,
-        sessionKey,
+        sessionKey: mainSessionKey,
         updatedAt: previousUpdatedAt,
       });
       // Prune the transcript to remove duplicate heartbeat turns
@@ -840,7 +879,7 @@ export async function runHeartbeatOnce(opts: {
     if (!visibility.showAlerts) {
       await restoreHeartbeatUpdatedAt({
         storePath,
-        sessionKey,
+        sessionKey: mainSessionKey,
         updatedAt: previousUpdatedAt,
       });
       emitHeartbeatEvent({
@@ -903,18 +942,27 @@ export async function runHeartbeatOnce(opts: {
       deps: opts.deps,
     });
 
-    // Record last delivered heartbeat payload for dedupe.
+    // Record last delivered heartbeat payload for dedupe (always on main session entry).
     if (!shouldSkipMain && normalized.text.trim()) {
       const store = loadSessionStore(storePath);
-      const current = store[sessionKey];
+      const current = store[mainSessionKey];
       if (current) {
-        store[sessionKey] = {
+        store[mainSessionKey] = {
           ...current,
           lastHeartbeatText: normalized.text,
           lastHeartbeatSentAt: startedAt,
         };
         await saveSessionStore(storePath, store);
       }
+    }
+
+    // When running in an isolated session, inject a short summary into the main session
+    // so that users can see what the heartbeat reported without the full turn transcript.
+    if (isolated && !shouldSkipMain && normalized.text.trim()) {
+      enqueueSystemEvent(`[heartbeat] ${normalized.text.slice(0, 300)}`, {
+        sessionKey: mainSessionKey,
+        contextKey: "heartbeat:alert",
+      });
     }
 
     emitHeartbeatEvent({

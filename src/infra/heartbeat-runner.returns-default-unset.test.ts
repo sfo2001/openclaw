@@ -617,12 +617,12 @@ describe("runHeartbeatOnce", () => {
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storePath },
       };
-      const sessionKey = resolveAgentMainSessionKey({ cfg, agentId: "ops" });
+      const mainSessionKey = resolveAgentMainSessionKey({ cfg, agentId: "ops" });
 
       await fs.writeFile(
         storePath,
         JSON.stringify({
-          [sessionKey]: {
+          [mainSessionKey]: {
             sessionId: "sid",
             updatedAt: Date.now(),
             lastChannel: "whatsapp",
@@ -654,10 +654,11 @@ describe("runHeartbeatOnce", () => {
         "Final alert",
         expect.any(Object),
       );
+      // Default heartbeat session is isolated: agent turn runs on "agent:ops:heartbeat"
       expect(replySpy).toHaveBeenCalledWith(
         expect.objectContaining({
           Body: expect.stringMatching(/Ops check[\s\S]*Current time: /),
-          SessionKey: sessionKey,
+          SessionKey: "agent:ops:heartbeat",
           From: "120363401234567890@g.us",
           To: "120363401234567890@g.us",
           OriginatingChannel: "whatsapp",
@@ -695,7 +696,7 @@ describe("runHeartbeatOnce", () => {
         channels: { whatsapp: { allowFrom: ["*"] } },
         session: { store: storeTemplate },
       };
-      const sessionKey = resolveAgentMainSessionKey({ cfg, agentId });
+      const mainSessionKey = resolveAgentMainSessionKey({ cfg, agentId });
       const storePath = resolveStorePath(storeTemplate, { agentId });
       const sessionsDir = path.dirname(storePath);
       const sessionId = "sid-ops";
@@ -705,15 +706,19 @@ describe("runHeartbeatOnce", () => {
       await fs.writeFile(sessionFile, "", "utf-8");
       await fs.writeFile(
         storePath,
-        JSON.stringify({
-          [sessionKey]: {
-            sessionId,
-            sessionFile,
-            updatedAt: Date.now(),
-            lastChannel: "whatsapp",
-            lastTo: "120363401234567890@g.us",
+        JSON.stringify(
+          {
+            [mainSessionKey]: {
+              sessionId,
+              sessionFile,
+              updatedAt: Date.now(),
+              lastChannel: "whatsapp",
+              lastTo: "120363401234567890@g.us",
+            },
           },
-        }),
+          null,
+          2,
+        ),
       );
 
       replySpy.mockResolvedValue([{ text: "Final alert" }]);
@@ -742,9 +747,10 @@ describe("runHeartbeatOnce", () => {
         "Final alert",
         expect.any(Object),
       );
+      // Default heartbeat session is isolated: agent turn runs on "agent:ops:heartbeat"
       expect(replySpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          SessionKey: sessionKey,
+          SessionKey: "agent:ops:heartbeat",
           From: "120363401234567890@g.us",
           To: "120363401234567890@g.us",
           Provider: "heartbeat",
