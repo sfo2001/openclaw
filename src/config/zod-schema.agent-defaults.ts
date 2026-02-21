@@ -126,6 +126,15 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        proactive: z
+          .object({
+            enabled: z.boolean().optional(),
+            tokenThreshold: z.number().min(0.1).max(0.9).optional(),
+            maxSessionFileBytes: z.number().int().positive().optional(),
+            heartbeat: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

@@ -39,6 +39,7 @@ import {
 } from "./agent-runner-helpers.js";
 import { runMemoryFlushIfNeeded } from "./agent-runner-memory.js";
 import { buildReplyPayloads } from "./agent-runner-payloads.js";
+import { runProactiveCompactionIfNeeded } from "./agent-runner-proactive-compact.js";
 import {
   appendUnscheduledReminderNote,
   hasSessionRelatedCronJobs,
@@ -223,6 +224,20 @@ export async function runReplyAgent(params: {
   }
 
   await typingSignals.signalRunStart();
+
+  // Proactive compaction: reduce context before the agent turn to prevent
+  // sessions from growing to SDK overflow thresholds (opt-in).
+  activeSessionEntry = await runProactiveCompactionIfNeeded({
+    cfg,
+    followupRun,
+    defaultModel,
+    agentCfgContextTokens,
+    sessionEntry: activeSessionEntry,
+    sessionStore: activeSessionStore,
+    sessionKey,
+    storePath,
+    isHeartbeat,
+  });
 
   activeSessionEntry = await runMemoryFlushIfNeeded({
     cfg,

@@ -348,6 +348,19 @@ export type AgentCompactionConfig = {
    * Default: false (existing behavior preserved).
    */
   truncateAfterCompaction?: boolean;
+  /** Proactive compaction: trigger compaction before the SDK overflow threshold fires. */
+  proactive?: AgentProactiveCompactionConfig;
+};
+
+export type AgentProactiveCompactionConfig = {
+  /** Enable proactive compaction (default: false, opt-in). */
+  enabled?: boolean;
+  /** Compact when totalTokens > threshold * contextWindow (0.1–0.9, default: 0.7). */
+  tokenThreshold?: number;
+  /** Compact when session file exceeds this byte size. No default (disabled). */
+  maxSessionFileBytes?: number;
+  /** Apply to heartbeat sessions too (default: true). */
+  heartbeat?: boolean;
 };
 
 export type AgentCompactionMemoryFlushConfig = {
