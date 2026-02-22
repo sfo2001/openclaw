@@ -669,7 +669,7 @@ export async function runHeartbeatOnce(opts: {
     AccountId: delivery.accountId,
     MessageThreadId: delivery.threadId,
     Provider: hasExecCompletion ? "exec-event" : hasCronEvents ? "cron-event" : "heartbeat",
-    SessionKey: runSessionKey,
+    SessionKey: sessionKey,
   };
   if (!visibility.showAlerts && !visibility.showOk && !visibility.useIndicator) {
     emitHeartbeatEvent({
@@ -723,8 +723,8 @@ export async function runHeartbeatOnce(opts: {
     // Capture transcript state before the heartbeat run so we can prune if HEARTBEAT_OK.
     // For isolated sessions, capture the isolated transcript (not the main session's).
     const transcriptState = await captureTranscriptState({
-      storePath: runStorePath,
-      sessionKey: runSessionKey,
+      storePath,
+      sessionKey,
       agentId,
     });
 

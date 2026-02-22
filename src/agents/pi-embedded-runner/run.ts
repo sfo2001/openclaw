@@ -1001,6 +1001,7 @@ export async function runEmbeddedPiAgent(
             bootstrapPromptWarningSignaturesSeen,
             bootstrapPromptWarningSignature:
               bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
+            maxToolCalls: params.maxToolCalls,
           });
 
           const {
