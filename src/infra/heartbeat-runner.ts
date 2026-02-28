@@ -209,6 +209,8 @@ type HeartbeatAgent = {
   heartbeat?: HeartbeatConfig;
 };
 
+const DEFAULT_HEARTBEAT_MAX_TOOL_CALLS = 50;
+
 export { isCronSystemEvent };
 
 function canHeartbeatDeliverCommitments(heartbeat?: HeartbeatConfig): boolean {
@@ -1598,6 +1600,7 @@ export async function runHeartbeatOnce(opts: {
       typeof heartbeat?.timeoutSeconds === "number" ? heartbeat.timeoutSeconds : undefined;
     const bootstrapContextMode: "lightweight" | undefined =
       heartbeat?.lightContext === true ? "lightweight" : undefined;
+    const maxToolCalls = (heartbeat?.maxToolCalls ?? DEFAULT_HEARTBEAT_MAX_TOOL_CALLS) || undefined;
     const replyOpts = {
       isHeartbeat: true,
       ...(heartbeatModelOverride ? { heartbeatModelOverride } : {}),
@@ -1611,6 +1614,7 @@ export async function runHeartbeatOnce(opts: {
       timeoutOverrideSeconds,
       bootstrapContextMode,
       onModelSelected: replyPrefix.onModelSelected,
+      maxToolCalls,
     };
     const getReplyFromConfig =
       opts.deps?.getReplyFromConfig ?? (await loadHeartbeatRunnerRuntime()).getReplyFromConfig;

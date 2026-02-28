@@ -114,6 +114,7 @@ import {
   findClientToolNameConflicts,
   toClientToolDefinitions,
 } from "../../pi-tool-definition-adapter.js";
+import { resetToolCallCounter } from "../../pi-tools.before-tool-call.js";
 import { createOpenClawCodingTools, resolveToolLoopDetectionConfig } from "../../pi-tools.js";
 import {
   resolveEffectiveToolPolicy,
@@ -870,6 +871,8 @@ export async function runEmbeddedAttempt(
               runAbortController.abort("sessions_yield");
               abortSessionForYield?.();
             },
+            maxToolCalls: params.maxToolCalls,
+            onMaxToolCallsReached: () => maxToolCallsAbortRef.current?.(),
           });
           corePluginToolStages.mark("attempt:create-openclaw-coding-tools");
           const filteredTools = applyEmbeddedAttemptToolsAllow(allTools, params.toolsAllow, {
@@ -1001,6 +1004,9 @@ export async function runEmbeddedAttempt(
     let abortSessionForYield: (() => void) | null = null;
     let queueYieldInterruptForSession: (() => void) | null = null;
     let yieldAbortSettled: Promise<void> | null = null;
+    // Deferred abort ref: populated once abortRun is defined (later in this function).
+    // Allows the tool-call cap to trigger session abort before the abort function is available.
+    const maxToolCallsAbortRef: { current?: () => void } = {};
     const runtimePlanModelContext = {
       workspaceDir: effectiveWorkspace,
       modelApi: params.model.api,
@@ -1592,6 +1598,8 @@ export async function runEmbeddedAttempt(
               runId: params.runId,
               loopDetection: clientToolLoopDetection,
               onToolOutcome: params.onToolOutcome,
+              maxToolCalls: params.maxToolCalls,
+              onMaxToolCallsReached: () => maxToolCallsAbortRef.current?.(),
             },
           )
         : [];
@@ -2302,6 +2310,8 @@ export async function runEmbeddedAttempt(
         idleTimedOut = true;
         abortRun(true, error);
       };
+      // Connect deferred abort ref so the tool-call cap can trigger session abort.
+      maxToolCallsAbortRef.current = () => abortRun(false, new Error("max tool calls exceeded"));
       const abortable = <T>(promise: Promise<T>): Promise<T> =>
         abortableWithSignal(runAbortController.signal, promise);
 
@@ -3377,6 +3387,11 @@ export async function runEmbeddedAttempt(
         }
         clearActiveEmbeddedRun(params.sessionId, queueHandle, params.sessionKey);
         params.abortSignal?.removeEventListener?.("abort", onAbort);
+        // Clean up tool-call counter for this session.
+        if (params.maxToolCalls) {
+          const sessionKey = params.sessionKey ?? params.sessionId;
+          resetToolCallCounter(sessionKey);
+        }
       }
 
       const toolMetasNormalized = toolMetas

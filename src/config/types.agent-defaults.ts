@@ -389,6 +389,9 @@ export type AgentDefaultsConfig = {
     suppressToolErrorWarnings?: boolean;
     /** Run timeout in seconds for heartbeat agent turns. */
     timeoutSeconds?: number;
+    /** Hard cap on tool calls per heartbeat run. When exceeded, the session is aborted.
+     * Default: 50. Set to 0 to disable. */
+    maxToolCalls?: number;
     /**
      * If true, run heartbeat turns with lightweight bootstrap context.
      * Lightweight mode keeps only HEARTBEAT.md from workspace bootstrap files.

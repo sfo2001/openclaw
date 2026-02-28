@@ -63,6 +63,8 @@ export type GetReplyOptions = {
   enableHeartbeatTool?: boolean;
   /** If true, keep the heartbeat response tool available even under narrow tool profiles. */
   forceHeartbeatTool?: boolean;
+  /** Hard cap on tool calls for this run. When exceeded, the session is aborted. */
+  maxToolCalls?: number;
   /**
    * If true, dispatch skips default tool/progress text messages and expects the
    * channel to surface progress via its own streaming/edit UX.

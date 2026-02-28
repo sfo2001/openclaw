@@ -1230,6 +1230,7 @@ export async function runEmbeddedPiAgent(
               bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1],
             suppressNextUserMessagePersistence,
             onUserMessagePersisted,
+            maxToolCalls: params.maxToolCalls,
           })
             .catch((err: unknown): never => {
               throw postCompactionAbortError ?? err;

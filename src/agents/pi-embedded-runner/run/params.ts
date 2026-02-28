@@ -143,6 +143,8 @@ export type RunEmbeddedPiAgentParams = {
   bootstrapPromptWarningSignaturesSeen?: string[];
   /** Last shown bootstrap truncation warning signature for this session. */
   bootstrapPromptWarningSignature?: string;
+  /** Hard cap on tool calls per run. When exceeded, the session is aborted. */
+  maxToolCalls?: number;
   execOverrides?: Pick<
     ExecToolDefaults,
     "host" | "security" | "ask" | "node" | "notifyOnExit" | "notifyOnExitEmptySuccess"
