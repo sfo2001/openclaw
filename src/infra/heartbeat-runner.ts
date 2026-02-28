@@ -111,6 +111,7 @@ type HeartbeatAgent = {
 
 const DEFAULT_HEARTBEAT_TARGET = "none";
 const HEARTBEAT_SESSION_PREFIX = "heartbeat";
+const DEFAULT_HEARTBEAT_MAX_TOOL_CALLS = 50;
 
 /** Main-session aliases that opt out of heartbeat isolation. */
 const MAIN_SESSION_ALIASES = new Set(["main"]);
@@ -134,7 +135,6 @@ type HeartbeatSessionResult = {
   isolated: boolean;
 };
 
-// Prompt used when an async exec has completed and the result should be relayed to the user.
 export { isCronSystemEvent };
 
 type HeartbeatAgentState = {
@@ -732,14 +732,16 @@ export async function runHeartbeatOnce(opts: {
     const suppressToolErrorWarnings = heartbeat?.suppressToolErrorWarnings === true;
     const bootstrapContextMode: "lightweight" | undefined =
       heartbeat?.lightContext === true ? "lightweight" : undefined;
+    const maxToolCalls = (heartbeat?.maxToolCalls ?? DEFAULT_HEARTBEAT_MAX_TOOL_CALLS) || undefined;
     const replyOpts = heartbeatModelOverride
       ? {
           isHeartbeat: true,
           heartbeatModelOverride,
           suppressToolErrorWarnings,
           bootstrapContextMode,
+          maxToolCalls,
         }
-      : { isHeartbeat: true, suppressToolErrorWarnings, bootstrapContextMode };
+      : { isHeartbeat: true, suppressToolErrorWarnings, bootstrapContextMode, maxToolCalls };
     const replyResult = await getReplyFromConfig(ctx, replyOpts, cfg);
 
     // When running in an isolated session, the agent turn does not drain the main

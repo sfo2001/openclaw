@@ -208,6 +208,7 @@ export function createFollowupRunner(params: {
           }),
           run: async (provider, model, runOptions) => {
             const authProfile = resolveRunAuthProfile(queued.run, provider);
+<<<<<<< HEAD
             let attemptCompactionCount = 0;
             try {
               const result = await runEmbeddedPiAgent({
@@ -250,6 +251,7 @@ export function createFollowupRunner(params: {
                 verboseLevel: queued.run.verboseLevel,
                 reasoningLevel: queued.run.reasoningLevel,
                 suppressToolErrorWarnings: opts?.suppressToolErrorWarnings,
+                maxToolCalls: opts?.maxToolCalls,
                 execOverrides: queued.run.execOverrides,
                 bashElevated: queued.run.bashElevated,
                 timeoutMs: queued.run.timeoutMs,

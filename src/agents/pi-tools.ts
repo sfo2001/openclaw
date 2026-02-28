@@ -274,6 +274,10 @@ export function createOpenClawCodingTools(options?: {
   senderIsOwner?: boolean;
   /** Callback invoked when sessions_yield tool is called. */
   onYield?: (message: string) => Promise<void> | void;
+  /** Hard cap on tool calls per session. When exceeded, the session is aborted. */
+  maxToolCalls?: number;
+  /** Callback invoked when the hard tool-call cap is reached. */
+  onMaxToolCallsReached?: () => void;
 }): AnyAgentTool[] {
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
@@ -606,13 +610,21 @@ export function createOpenClawCodingTools(options?: {
       modelCompat: options?.modelCompat,
     }),
   );
+  const resolvedLoopDetection = resolveToolLoopDetectionConfig({ cfg: options?.config, agentId });
+  // When a hard tool-call cap is set, force loop detection enabled so the model
+  // gets softer pattern-based warnings before the hard cap fires.
+  if (options?.maxToolCalls && resolvedLoopDetection && !resolvedLoopDetection.enabled) {
+    resolvedLoopDetection.enabled = true;
+  }
   const withHooks = normalized.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, {
       agentId,
       sessionKey: options?.sessionKey,
       sessionId: options?.sessionId,
       runId: options?.runId,
-      loopDetection: resolveToolLoopDetectionConfig({ cfg: options?.config, agentId }),
+      loopDetection: resolvedLoopDetection,
+      maxToolCalls: options?.maxToolCalls,
+      onMaxToolCallsReached: options?.onMaxToolCallsReached,
     }),
   );
   const withAbort = options?.abortSignal

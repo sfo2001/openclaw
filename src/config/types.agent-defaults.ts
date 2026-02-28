@@ -251,6 +251,9 @@ export type AgentDefaultsConfig = {
     ackMaxChars?: number;
     /** Suppress tool error warning payloads during heartbeat runs. */
     suppressToolErrorWarnings?: boolean;
+    /** Hard cap on tool calls per heartbeat run. When exceeded, the session is aborted.
+     * Default: 50. Set to 0 to disable. */
+    maxToolCalls?: number;
     /**
      * If true, run heartbeat turns with lightweight bootstrap context.
      * Lightweight mode keeps only HEARTBEAT.md from workspace bootstrap files.

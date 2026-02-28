@@ -77,6 +77,7 @@ import { subscribeEmbeddedPiSession } from "../../pi-embedded-subscribe.js";
 import { createPreparedEmbeddedPiSettingsManager } from "../../pi-project-settings.js";
 import { applyPiAutoCompactionGuard } from "../../pi-settings.js";
 import { toClientToolDefinitions } from "../../pi-tool-definition-adapter.js";
+import { resetToolCallCounter } from "../../pi-tools.before-tool-call.js";
 import { createOpenClawCodingTools, resolveToolLoopDetectionConfig } from "../../pi-tools.js";
 import { resolveSandboxContext } from "../../sandbox.js";
 import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
@@ -1731,6 +1732,10 @@ export async function runEmbeddedAttempt(
     let abortSessionForYield: (() => void) | null = null;
     let queueYieldInterruptForSession: (() => void) | null = null;
     let yieldAbortSettled: Promise<void> | null = null;
+
+    // Deferred abort ref: populated once abortRun is defined (later in this function).
+    // Allows the tool-call cap to trigger session abort before the abort function is available.
+    const maxToolCallsAbortRef: { current?: () => void } = {};
     // Check if the model supports native image input
     const modelHasVision = params.model.input?.includes("image") ?? false;
     const toolsRaw = params.disableTools
@@ -1788,6 +1793,8 @@ export async function runEmbeddedAttempt(
             runAbortController.abort("sessions_yield");
             abortSessionForYield?.();
           },
+          maxToolCalls: params.maxToolCalls,
+          onMaxToolCallsReached: () => maxToolCallsAbortRef.current?.(),
         });
     const toolsEnabled = supportsModelTools(params.model);
     const tools = sanitizeToolsForGoogle({
@@ -2129,6 +2136,8 @@ export async function runEmbeddedAttempt(
               sessionId: params.sessionId,
               runId: params.runId,
               loopDetection: clientToolLoopDetection,
+              maxToolCalls: params.maxToolCalls,
+              onMaxToolCallsReached: () => maxToolCallsAbortRef.current?.(),
             },
           )
         : [];
@@ -2501,6 +2510,8 @@ export async function runEmbeddedAttempt(
         abortCompaction();
         void activeSession.abort();
       };
+      // Connect deferred abort ref so the tool-call cap can trigger session abort.
+      maxToolCallsAbortRef.current = () => abortRun(false, new Error("max tool calls exceeded"));
       const abortable = <T>(promise: Promise<T>): Promise<T> => {
         const signal = runAbortController.signal;
         if (signal.aborted) {
@@ -3115,6 +3126,11 @@ export async function runEmbeddedAttempt(
         }
         clearActiveEmbeddedRun(params.sessionId, queueHandle, params.sessionKey);
         params.abortSignal?.removeEventListener?.("abort", onAbort);
+        // Clean up tool-call counter for this session.
+        if (params.maxToolCalls) {
+          const sessionKey = params.sessionKey ?? params.sessionId;
+          resetToolCallCounter(sessionKey);
+        }
       }
 
       const lastAssistant = messagesSnapshot
