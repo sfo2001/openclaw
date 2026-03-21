@@ -96,7 +96,7 @@ describe("heartbeat session isolation (default behavior)", () => {
     const storePath = path.join(tmpDir, "sessions.json");
     const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
     try {
-      const cfg = createConfig(tmpDir, storePath);
+      const cfg = createConfig(tmpDir, storePath, { isolatedSession: true });
       const mainSessionKey = await seedMainSession(storePath, cfg);
 
       replySpy.mockResolvedValue({ text: "HEARTBEAT_OK" });
@@ -197,7 +197,7 @@ describe("heartbeat session isolation (default behavior)", () => {
     const storePath = path.join(tmpDir, "sessions.json");
     const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
     try {
-      const cfg = createConfig(tmpDir, storePath);
+      const cfg = createConfig(tmpDir, storePath, { isolatedSession: true });
       const mainSessionKey = await seedMainSession(storePath, cfg);
 
       enqueueSystemEvent("Cron: Cleanup done", {
@@ -229,7 +229,7 @@ describe("heartbeat session isolation (default behavior)", () => {
     const storePath = path.join(tmpDir, "sessions.json");
     const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
     try {
-      const cfg = createConfig(tmpDir, storePath);
+      const cfg = createConfig(tmpDir, storePath, { isolatedSession: true });
       const mainSessionKey = await seedMainSession(storePath, cfg);
 
       replySpy.mockResolvedValue({ text: "Alert: Server disk usage at 90%" });
@@ -302,7 +302,7 @@ describe("heartbeat session isolation (default behavior)", () => {
     const storePath = path.join(tmpDir, "sessions.json");
     const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
     try {
-      const cfg = createConfig(tmpDir, storePath);
+      const cfg = createConfig(tmpDir, storePath, { isolatedSession: true });
       const mainSessionKey = await seedMainSession(storePath, cfg);
 
       replySpy.mockResolvedValue({ text: "HEARTBEAT_OK" });

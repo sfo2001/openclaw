@@ -38,7 +38,6 @@ import {
 } from "../config/sessions.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { AgentDefaultsConfig } from "../config/types.agent-defaults.js";
-import { resolveCronSession } from "../cron/isolated-agent/session.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getQueueSize } from "../process/command-queue.js";
 import { CommandLane } from "../process/lanes.js";
@@ -109,7 +108,6 @@ type HeartbeatAgent = {
   heartbeat?: HeartbeatConfig;
 };
 
-const DEFAULT_HEARTBEAT_TARGET = "none";
 const HEARTBEAT_SESSION_PREFIX = "heartbeat";
 const DEFAULT_HEARTBEAT_MAX_TOOL_CALLS = 50;
 
@@ -122,8 +120,7 @@ function shouldIsolateHeartbeat(heartbeat?: HeartbeatConfig, forcedSessionKey?: 
   if (forcedSessionKey) {
     return false;
   }
-  const trimmed = heartbeat?.session?.trim() ?? "";
-  return !trimmed; // Only unset/empty = isolated (new default)
+  return heartbeat?.isolatedSession === true;
 }
 
 type HeartbeatSessionResult = {
@@ -253,14 +250,10 @@ function resolveHeartbeatSession(
     }
   }
 
-  // Isolation: when no session key is configured (empty/unset), use a dedicated
-  // heartbeat session to prevent the main session from accumulating heartbeat turns.
+  // Isolation: when isolatedSession is enabled, use a dedicated heartbeat session
+  // to prevent the main session from accumulating heartbeat turns.
   if (shouldIsolateHeartbeat(heartbeat, forcedSessionKey)) {
-    const isolatedKey = toAgentStoreSessionKey({
-      agentId: resolvedAgentId,
-      requestKey: HEARTBEAT_SESSION_PREFIX,
-      mainKey: cfg.session?.mainKey,
-    });
+    const isolatedKey = `${mainSessionKey}:${HEARTBEAT_SESSION_PREFIX}`;
     const isolatedEntry = store[isolatedKey];
     return asResult(isolatedKey, isolatedEntry, true);
   }

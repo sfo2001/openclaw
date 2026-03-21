@@ -610,7 +610,12 @@ describe("runHeartbeatOnce", () => {
             {
               id: "ops",
               workspace: tmpDir,
-              heartbeat: { every: "5m", target: "whatsapp", prompt: "Ops check" },
+              heartbeat: {
+                every: "5m",
+                target: "whatsapp",
+                prompt: "Ops check",
+                isolatedSession: true,
+              },
             },
           ],
         },
@@ -654,11 +659,11 @@ describe("runHeartbeatOnce", () => {
         "Final alert",
         expect.any(Object),
       );
-      // Default heartbeat session is isolated: agent turn runs on "agent:ops:heartbeat"
+      // When isolatedSession is enabled, agent turn runs on "<mainSessionKey>:heartbeat"
       expect(replySpy).toHaveBeenCalledWith(
         expect.objectContaining({
           Body: expect.stringMatching(/Ops check[\s\S]*Current time: /),
-          SessionKey: "agent:ops:heartbeat",
+          SessionKey: `${mainSessionKey}:heartbeat`,
           From: "120363401234567890@g.us",
           To: "120363401234567890@g.us",
           OriginatingChannel: "whatsapp",
@@ -689,7 +694,12 @@ describe("runHeartbeatOnce", () => {
             {
               id: agentId,
               workspace: tmpDir,
-              heartbeat: { every: "5m", target: "whatsapp", prompt: "Ops check" },
+              heartbeat: {
+                every: "5m",
+                target: "whatsapp",
+                prompt: "Ops check",
+                isolatedSession: true,
+              },
             },
           ],
         },
@@ -747,10 +757,10 @@ describe("runHeartbeatOnce", () => {
         "Final alert",
         expect.any(Object),
       );
-      // Default heartbeat session is isolated: agent turn runs on "agent:ops:heartbeat"
+      // When isolatedSession is enabled, agent turn runs on "<mainSessionKey>:heartbeat"
       expect(replySpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          SessionKey: "agent:ops:heartbeat",
+          SessionKey: `${mainSessionKey}:heartbeat`,
           From: "120363401234567890@g.us",
           To: "120363401234567890@g.us",
           Provider: "heartbeat",
