@@ -1,0 +1,11 @@
+{
+  "id": "piper",
+  "contracts": {
+    "speechProviders": ["piper"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

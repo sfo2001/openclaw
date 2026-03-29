@@ -1,0 +1,12 @@
+{
+  "name": "@openclaw/piper-speech",
+  "version": "2026.3.29",
+  "private": true,
+  "description": "OpenClaw Piper TTS plugin",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

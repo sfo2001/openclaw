@@ -11732,6 +11732,32 @@ export const GENERATED_BUNDLED_PLUGIN_METADATA = [
     },
   },
   {
+    dirName: "piper",
+    idHint: "piper",
+    source: {
+      source: "./index.ts",
+      built: "index.js",
+    },
+    publicSurfaceArtifacts: ["speech-provider.js"],
+    packageName: "@openclaw/piper-speech",
+    packageVersion: "2026.3.29",
+    packageDescription: "OpenClaw Piper TTS plugin",
+    packageManifest: {
+      extensions: ["./index.ts"],
+    },
+    manifest: {
+      id: "piper",
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      contracts: {
+        speechProviders: ["piper"],
+      },
+    },
+  },
+  {
     dirName: "qianfan",
     idHint: "qianfan",
     source: {

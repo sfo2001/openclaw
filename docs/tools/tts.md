@@ -9,7 +9,7 @@ title: "Text-to-Speech"
 
 # Text-to-speech (TTS)
 
-OpenClaw can convert outbound replies into audio using ElevenLabs, Microsoft, or OpenAI.
+OpenClaw can convert outbound replies into audio using ElevenLabs, Microsoft, OpenAI, or Piper.
 It works anywhere OpenClaw can send audio.
 
 ## Supported services
@@ -17,6 +17,7 @@ It works anywhere OpenClaw can send audio.
 - **ElevenLabs** (primary or fallback provider)
 - **Microsoft** (primary or fallback provider; current bundled implementation uses `node-edge-tts`)
 - **OpenAI** (primary or fallback provider; also used for summaries)
+- **Piper** (local neural TTS; no API key; requires a model file and `ffmpeg`)
 
 ### Microsoft speech notes
 
@@ -30,6 +31,23 @@ using `edge` still works and is normalized to `microsoft`.
 Because this path is a public web service without a published SLA or quota,
 treat it as best-effort. If you need guaranteed limits and support, use OpenAI
 or ElevenLabs.
+
+### Piper notes
+
+Piper is a local, offline neural TTS engine. No API key or network access is required.
+
+Requirements:
+
+- The `piper` binary on the host (or a configured `piper.binaryPath`).
+- A voice model file (`.onnx`) downloaded from the [Piper releases](https://github.com/rhasspy/piper/releases).
+- `ffmpeg` on the host, used to convert Piper's raw WAV output to MP3 or Opus.
+
+Piper is selected automatically when `messages.tts.piper.modelPath` is set and `provider` is
+either unset or explicitly set to `"piper"`. It does not register with the speech provider
+registry; it is handled inline by the TTS layer.
+
+Output format: Opus voice note on voice-bubble channels (Telegram, Feishu, WhatsApp, Matrix);
+MP3 on all other channels.
 
 ## Optional keys
 
@@ -159,6 +177,25 @@ Full schema is in [Gateway configuration](/gateway/configuration).
 }
 ```
 
+### Piper local TTS
+
+```json5
+{
+  messages: {
+    tts: {
+      auto: "always",
+      provider: "piper",
+      piper: {
+        binaryPath: "/usr/local/bin/piper",
+        modelPath: "/opt/piper/models/en_US-lessac-medium.onnx",
+        lengthScale: 1.0,
+        sentenceSilence: 0.2,
+      },
+    },
+  },
+}
+```
+
 ### Custom limits + prefs path
 
 ```json5
@@ -211,7 +248,7 @@ Then run:
   - `tagged` only sends audio when the reply includes `[[tts]]` tags.
 - `enabled`: legacy toggle (doctor migrates this to `auto`).
 - `mode`: `"final"` (default) or `"all"` (includes tool/block replies).
-- `provider`: speech provider id such as `"elevenlabs"`, `"microsoft"`, or `"openai"` (fallback is automatic).
+- `provider`: speech provider id such as `"elevenlabs"`, `"microsoft"`, `"openai"`, or `"piper"` (fallback is automatic).
 - If `provider` is **unset**, OpenClaw uses the first configured speech provider in registry auto-select order.
 - Legacy `provider: "edge"` still works and is normalized to `microsoft`.
 - `summaryModel`: optional cheap model for auto-summary; defaults to `agents.defaults.model.primary`.
@@ -244,6 +281,14 @@ Then run:
 - `providers.microsoft.proxy`: proxy URL for Microsoft speech requests.
 - `providers.microsoft.timeoutMs`: request timeout override (ms).
 - `edge.*`: legacy alias for the same Microsoft settings.
+- `piper.binaryPath`: path to the piper binary (default: `piper` on `PATH`).
+- `piper.modelPath`: path to the `.onnx` voice model file (required to enable Piper).
+- `piper.configPath`: path to the model's JSON config file (auto-detected from model path if omitted).
+- `piper.sampleRate`: output sample rate in Hz (default: model default).
+- `piper.lengthScale`: phoneme duration multiplier — `>1` slows speech, `<1` speeds it up (range: `0.1..10`).
+- `piper.sentenceSilence`: silence between sentences in seconds (range: `0..10`).
+- `piper.useCuda`: use CUDA GPU inference (default: `false`).
+- `piper.speaker`: speaker index for multi-speaker models (integer `0..9999`).
 
 ## Model-driven overrides (default on)
 
@@ -333,6 +378,8 @@ These override `messages.tts.*` for that host.
   - Telegram `sendVoice` accepts OGG/MP3/M4A; use OpenAI/ElevenLabs if you need
     guaranteed Opus voice messages.
   - If the configured Microsoft output format fails, OpenClaw retries with MP3.
+
+- **Piper**: Opus voice note on voice-bubble channels (Telegram, Feishu, WhatsApp, Matrix); MP3 otherwise. ffmpeg is used for the conversion.
 
 OpenAI/ElevenLabs output formats are fixed per channel (see above).
 

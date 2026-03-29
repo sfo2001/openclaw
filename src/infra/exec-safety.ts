@@ -42,3 +42,32 @@ export function isSafeExecutableValue(value: string | null | undefined): boolean
   }
   return BARE_NAME_PATTERN.test(trimmed);
 }
+
+/**
+ * Validates a file path value passed to spawn() as an array argument.
+ * More permissive than isSafeExecutableValue: allows spaces and bare filenames
+ * that don't match the executable name pattern (e.g. model files with spaces).
+ * Safe only when the value is used as a spawn() array argument, not shell-interpolated.
+ */
+export function isSafeFilePath(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.includes("\0")) {
+    return false;
+  }
+  if (CONTROL_CHARS.test(trimmed)) {
+    return false;
+  }
+  if (SHELL_METACHARS.test(trimmed)) {
+    return false;
+  }
+  if (QUOTE_CHARS.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
