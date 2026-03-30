@@ -336,6 +336,153 @@ describe("lobster plugin tool", () => {
     expect(factoryTool(fakeCtx({ sandboxed: true }))).toBeNull();
     expect(factoryTool(fakeCtx({ sandboxed: false }))?.name).toBe("lobster");
   });
+
+  describe("cooldown guard", () => {
+    it("first run of pipeline passes cooldown check", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi());
+      const res = await tool.execute("cd-1", {
+        action: "run",
+        pipeline: "my-pipeline",
+        timeoutMs: 1000,
+      });
+      expect(res.details).toMatchObject({ ok: true });
+    });
+
+    it("second run of same pipeline within cooldown window is rejected", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi());
+      await tool.execute("cd-2a", { action: "run", pipeline: "my-pipeline", timeoutMs: 1000 });
+
+      const res = await tool.execute("cd-2b", { action: "run", pipeline: "my-pipeline" });
+      const details = res.details as { ok: boolean; error: { type: string; message: string } };
+      expect(details.ok).toBe(false);
+      expect(details.error.type).toBe("cooldown");
+      expect(details.error.message).toContain("Do not retry");
+      // spawn only called once — second run was blocked before reaching subprocess
+      expect(spawnState.spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it("different pipeline names do not share cooldown state", async () => {
+      queueSuccessfulEnvelope("a");
+      queueSuccessfulEnvelope("b");
+      const tool = createLobsterTool(fakeApi());
+      const resA = await tool.execute("cd-3a", {
+        action: "run",
+        pipeline: "pipeline-a",
+        timeoutMs: 1000,
+      });
+      const resB = await tool.execute("cd-3b", {
+        action: "run",
+        pipeline: "pipeline-b",
+        timeoutMs: 1000,
+      });
+      expect(resA.details).toMatchObject({ ok: true });
+      expect(resB.details).toMatchObject({ ok: true });
+      expect(spawnState.spawn).toHaveBeenCalledTimes(2);
+    });
+
+    it("resume action bypasses cooldown guard", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi());
+      await tool.execute("cd-4a", { action: "run", pipeline: "my-pipeline", timeoutMs: 1000 });
+
+      queueSuccessfulEnvelope();
+      const res = await tool.execute("cd-4b", {
+        action: "resume",
+        token: "resume-tok",
+        approve: true,
+        timeoutMs: 1000,
+      });
+      expect(res.details).toMatchObject({ ok: true });
+    });
+
+    it("cooldown expires after RUN_COOLDOWN_MS", async () => {
+      // Only fake Date to control time; leave setImmediate/setTimeout real so
+      // the spawn mock still fires its callbacks normally.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+        queueSuccessfulEnvelope();
+        const tool = createLobsterTool(fakeApi());
+        await tool.execute("cd-5a", { action: "run", pipeline: "expiry-test", timeoutMs: 1000 });
+
+        // advance past cooldown (60s + 1ms)
+        vi.setSystemTime(new Date("2026-01-01T00:01:00.001Z"));
+        queueSuccessfulEnvelope();
+        const res = await tool.execute("cd-5b", {
+          action: "run",
+          pipeline: "expiry-test",
+          timeoutMs: 1000,
+        });
+        expect(res.details).toMatchObject({ ok: true });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("gateway credential injection", () => {
+    it("injects CLAWD_URL with default port 18789 when no gateway config", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi());
+      await tool.execute("cred-1", { action: "run", pipeline: "noop", timeoutMs: 1000 });
+      const [, , options] = spawnState.spawn.mock.calls[0] ?? [];
+      expect((options as { env: Record<string, string> }).env.CLAWD_URL).toBe(
+        "http://localhost:18789",
+      );
+    });
+
+    it("injects CLAWD_URL with configured gateway port", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi({ config: { gateway: { port: 19000 } } }));
+      await tool.execute("cred-2", { action: "run", pipeline: "noop", timeoutMs: 1000 });
+      const [, , options] = spawnState.spawn.mock.calls[0] ?? [];
+      expect((options as { env: Record<string, string> }).env.CLAWD_URL).toBe(
+        "http://localhost:19000",
+      );
+    });
+
+    it("injects CLAWD_TOKEN when gateway token is set", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(
+        fakeApi({ config: { gateway: { auth: { token: "secret-token" } } } }),
+      );
+      await tool.execute("cred-3", { action: "run", pipeline: "noop", timeoutMs: 1000 });
+      const [, , options] = spawnState.spawn.mock.calls[0] ?? [];
+      expect((options as { env: Record<string, string> }).env.CLAWD_TOKEN).toBe("secret-token");
+    });
+
+    it("omits CLAWD_TOKEN when gateway token is not set", async () => {
+      queueSuccessfulEnvelope();
+      const tool = createLobsterTool(fakeApi());
+      await tool.execute("cred-4", { action: "run", pipeline: "noop", timeoutMs: 1000 });
+      const [, , options] = spawnState.spawn.mock.calls[0] ?? [];
+      expect((options as { env: Record<string, string | undefined> }).env).not.toHaveProperty(
+        "CLAWD_TOKEN",
+      );
+    });
+
+    it("process env CLAWD_URL takes precedence over injected config value", async () => {
+      const saved = process.env.CLAWD_URL;
+      try {
+        process.env.CLAWD_URL = "http://localhost:9999";
+        queueSuccessfulEnvelope();
+        const tool = createLobsterTool(fakeApi());
+        await tool.execute("cred-5", { action: "run", pipeline: "noop", timeoutMs: 1000 });
+        const [, , options] = spawnState.spawn.mock.calls[0] ?? [];
+        expect((options as { env: Record<string, string> }).env.CLAWD_URL).toBe(
+          "http://localhost:9999",
+        );
+      } finally {
+        if (saved === undefined) {
+          delete process.env.CLAWD_URL;
+        } else {
+          process.env.CLAWD_URL = saved;
+        }
+      }
+    });
+  });
 });
 
 describe("resolveWindowsLobsterSpawn", () => {
