@@ -188,7 +188,18 @@ function parseEnvelope(stdout: string): LobsterEnvelope {
 
 // Run-once cooldown guard: prevents the model from retrying the same pipeline
 // in a tight loop when upstream steps fail silently, burning tokens.
-const recentRuns = new Map<string, number>();
+//
+// Stored on globalThis so the same Map is shared across jiti module instances:
+// tsdown inlines this module into a bundled chunk with its own closure, and
+// jiti creates a separate instance when loading from .ts source at runtime.
+// Without globalThis, two instances would each have their own Map and the
+// guard would not fire across instances.
+const RECENT_RUNS_KEY = Symbol.for("openclaw.lobster.recentRuns");
+const _globals = globalThis as Record<symbol, unknown>;
+if (!(_globals[RECENT_RUNS_KEY] instanceof Map)) {
+  _globals[RECENT_RUNS_KEY] = new Map<string, number>();
+}
+const recentRuns = _globals[RECENT_RUNS_KEY] as Map<string, number>;
 const RUN_COOLDOWN_MS = 60_000;
 
 function checkRunCooldown(pipeline: string): string | null {
