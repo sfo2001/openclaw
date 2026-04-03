@@ -51,7 +51,7 @@ describe("lobster plugin tool", () => {
       action: "run",
       pipeline: "noop",
       cwd: process.cwd(),
-      timeoutMs: 1000,
+      timeoutMs: 300_000,
       maxStdoutBytes: 512_000,
     });
     expect(res.details).toMatchObject({
@@ -91,7 +91,7 @@ describe("lobster plugin tool", () => {
       pipeline: "noop",
       argsJson: '{"since_hours":1}',
       cwd: process.cwd(),
-      timeoutMs: 1500,
+      timeoutMs: 300_000,
       maxStdoutBytes: 4096,
     });
     expect(res.details).toMatchObject({

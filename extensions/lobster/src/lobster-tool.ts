@@ -250,7 +250,10 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       }
 
       const cwd = resolveLobsterCwd(params.cwd);
-      const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 20_000;
+      const timeoutMs = Math.max(
+        300_000,
+        typeof params.timeoutMs === "number" ? params.timeoutMs : 300_000,
+      );
       const maxStdoutBytes =
         typeof params.maxStdoutBytes === "number" ? params.maxStdoutBytes : 512_000;
 
