@@ -5,7 +5,12 @@ const EXEC_TOOL_HOST_VALUES = ["auto", "sandbox", "gateway", "node"] as const;
 
 export const execSchema = Type.Object({
   command: Type.String({ description: "Shell command to execute" }),
-  workdir: Type.Optional(Type.String({ description: "Working directory (defaults to cwd)" })),
+  workdir: Type.Optional(
+    Type.String({
+      description:
+        "Working directory (defaults to workspace dir). Prefer over 'cd /path && cmd' — shell builtins like cd cannot be allowlisted.",
+    }),
+  ),
   env: Type.Optional(Type.Record(Type.String(), Type.String())),
   yieldMs: Type.Optional(
     Type.Number({

@@ -17,7 +17,7 @@ import {
   getShellPathFromLoginShell,
   resolveShellEnvFallbackTimeoutMs,
 } from "../infra/shell-env.js";
-import { logInfo } from "../logger.js";
+import { logInfo, logWarn } from "../logger.js";
 import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import {
@@ -70,6 +70,107 @@ export type {
   ExecToolDefaults,
   ExecToolDetails,
 } from "./bash-tools.exec-types.js";
+
+/**
+ * Detect `cd <literal-path> && <rest>` or `cd <literal-path>; <rest>` patterns
+ * and extract the path into a workdir value, returning the remainder as the
+ * rewritten command.
+ *
+ * Returns null when no rewriting should occur:
+ * - explicit workdir already provided by the model
+ * - no `&&` or `;` separator after the cd
+ * - path contains shell variables ($, ~, backticks) that cannot be resolved
+ *
+ * Design choice: paths with variable references are left untouched because
+ * workdir is passed as cwd (no shell expansion). See spec for rationale.
+ */
+export function extractCdPrefix(
+  command: string,
+  explicitWorkdir: string | undefined,
+): { command: string; workdir: string } | null {
+  if (explicitWorkdir) {
+    return null;
+  }
+
+  const trimmed = command.trim();
+  if (!trimmed.startsWith("cd ") && trimmed !== "cd") {
+    return null;
+  }
+
+  // Find the first unquoted && or ; separator.
+  let separatorIdx = -1;
+  let separatorLen = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && !inSingle) {
+      escaped = true;
+      continue;
+    }
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (inSingle || inDouble) {
+      continue;
+    }
+    if (ch === "&" && trimmed[i + 1] === "&") {
+      separatorIdx = i;
+      separatorLen = 2;
+      break;
+    }
+    if (ch === ";") {
+      separatorIdx = i;
+      separatorLen = 1;
+      break;
+    }
+    // Bail on pipe or or-chain — different semantics.
+    if (ch === "|") {
+      return null;
+    }
+  }
+
+  if (separatorIdx === -1) {
+    // No separator found — bare `cd /path` or `cd` alone.
+    return null;
+  }
+
+  const cdPortion = trimmed.slice(0, separatorIdx).trim();
+  const remainder = trimmed.slice(separatorIdx + separatorLen).trim();
+
+  if (!remainder) {
+    // Nothing after the separator.
+    return null;
+  }
+
+  // Tokenize the cd portion to extract the path.
+  const tokens = splitShellArgs(cdPortion);
+  if (!tokens || tokens.length !== 2 || tokens[0] !== "cd") {
+    return null;
+  }
+
+  const cdPath = tokens[1];
+
+  // Design choice: do not rewrite when path contains shell variables,
+  // tilde, backticks, or command substitution. These cannot be safely
+  // resolved because workdir is passed as cwd without shell expansion.
+  if (/[$`~]/.test(cdPath)) {
+    return null;
+  }
+
+  return { command: remainder, workdir: cdPath };
+}
 
 function buildExecForegroundResult(params: {
   outcome: ExecProcessOutcome;
@@ -1238,7 +1339,7 @@ export function createExecTool(
     },
     parameters: execSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
-      const params = args as {
+      let params = args as {
         command: string;
         workdir?: string;
         env?: Record<string, string>;
@@ -1401,6 +1502,17 @@ export function createExecTool(
       } else {
         const rawWorkdir = explicitWorkdir ?? defaultWorkdir ?? process.cwd();
         workdir = resolveWorkdir(rawWorkdir, warnings);
+      }
+      // Runtime cd-prefix extraction: rewrite `cd /path && cmd` into workdir + cmd
+      // so the allowlist evaluates the real command, not the shell builtin.
+      const cdExtraction = extractCdPrefix(params.command, explicitWorkdir);
+      if (cdExtraction) {
+        logWarn("exec: extracted cd prefix into workdir (model used cd /path && cmd pattern)");
+        params = { ...params, command: cdExtraction.command };
+        const resolvedCdWorkdir = path.isAbsolute(cdExtraction.workdir)
+          ? cdExtraction.workdir
+          : path.resolve(workdir ?? process.cwd(), cdExtraction.workdir);
+        workdir = resolveWorkdir(resolvedCdWorkdir, warnings);
       }
       rejectUnsafeControlShellCommand(params.command);
 
