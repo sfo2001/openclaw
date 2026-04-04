@@ -1,5 +1,6 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractCdPrefix } from "./bash-tools.exec.js";
+import { extractCdPrefix } from "./bash-tools.exec-cd-prefix.js";
 
 describe("extractCdPrefix", () => {
   describe("rewrites cd prefix into workdir", () => {
@@ -36,6 +37,16 @@ describe("extractCdPrefix", () => {
     it("handles semicolon with complex remainder", () => {
       const result = extractCdPrefix("cd /app; npm run build && npm test", undefined);
       expect(result).toEqual({ command: "npm run build && npm test", workdir: "/app" });
+    });
+
+    it("handles backslash-escaped spaces in unquoted path", () => {
+      const result = extractCdPrefix("cd /my\\ project && build", undefined);
+      expect(result).toEqual({ command: "build", workdir: "/my project" });
+    });
+
+    it("handles extra whitespace around tokens", () => {
+      const result = extractCdPrefix("  cd   /tmp   &&   ls  ", undefined);
+      expect(result).toEqual({ command: "ls", workdir: "/tmp" });
     });
   });
 
@@ -86,6 +97,52 @@ describe("extractCdPrefix", () => {
 
     it("returns null for empty command", () => {
       expect(extractCdPrefix("", undefined)).toBeNull();
+    });
+
+    it("returns null for cd - (previous directory)", () => {
+      expect(extractCdPrefix("cd - && ls", undefined)).toBeNull();
+    });
+
+    it("returns null for trailing separator with no remainder", () => {
+      expect(extractCdPrefix("cd /tmp &&", undefined)).toBeNull();
+    });
+
+    it("returns null for trailing semicolon with no remainder", () => {
+      expect(extractCdPrefix("cd /tmp;", undefined)).toBeNull();
+    });
+  });
+
+  describe("integration: relative path resolution", () => {
+    it("relative workdir resolves against a base directory", () => {
+      const result = extractCdPrefix("cd src && make", undefined);
+      expect(result).not.toBeNull();
+      // Simulate what the exec handler does: resolve relative against a base.
+      const base = "/project/root";
+      const resolved = path.isAbsolute(result!.workdir)
+        ? result!.workdir
+        : path.resolve(base, result!.workdir);
+      expect(resolved).toBe(path.join("/project/root", "src"));
+      expect(result!.command).toBe("make");
+    });
+
+    it("absolute workdir is used as-is", () => {
+      const result = extractCdPrefix("cd /opt/app && deploy", undefined);
+      expect(result).not.toBeNull();
+      const base = "/project/root";
+      const resolved = path.isAbsolute(result!.workdir)
+        ? result!.workdir
+        : path.resolve(base, result!.workdir);
+      expect(resolved).toBe("/opt/app");
+      expect(result!.command).toBe("deploy");
+    });
+
+    it("params mutation preserves other fields", () => {
+      const params = { command: "cd /tmp && ls", workdir: undefined, env: { FOO: "bar" } };
+      const result = extractCdPrefix(params.command, params.workdir);
+      expect(result).not.toBeNull();
+      const updated = { ...params, command: result!.command };
+      expect(updated.env).toEqual({ FOO: "bar" });
+      expect(updated.command).toBe("ls");
     });
   });
 });

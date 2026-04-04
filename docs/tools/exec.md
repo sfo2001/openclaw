@@ -17,7 +17,7 @@ Shell command to run.
 </ParamField>
 
 <ParamField path="workdir" type="string" default="cwd">
-Working directory for the command.
+Working directory for the command. Prefer over `cd /path && cmd` — shell builtins like `cd` cannot be allowlisted.
 </ParamField>
 
 <ParamField path="env" type="object">
