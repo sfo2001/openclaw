@@ -91,12 +91,12 @@
       },
       "nebius": {
         "baseUrl": "https://api.studio.nebius.ai/v1",
-        "apiKey": "${env:NEBIUS_API_KEY}",
+        "apiKey": "",
         "api": "openai-completions"
       },
       "nvidia": {
         "baseUrl": "https://integrate.api.nvidia.com/v1",
-        "apiKey": "${env:NVIDIA_API_KEY}",
+        "apiKey": "",
         "api": "openai-completions"
       }
     }
@@ -356,7 +356,7 @@
     "bind": "lan",
     "auth": {
       "mode": "token",
-      "token": "${env:OPENCLAW_GATEWAY_TOKEN}",
+      "token": "bab4142b55546154956c0765c8e4af3d",
       "rateLimit": {
         "maxAttempts": 10,
         "windowMs": 60000,
@@ -377,10 +377,10 @@
     },
     "entries": {
       "homeassistant": {
-        "enabled": true,
+        "enabled": false,
         "env": {
           "HA_URL": "http://homeassistant.local:8123",
-          "HA_TOKEN": "${env:HA_TOKEN}"
+          "HA_TOKEN": ""
         }
       },
       "deep-researcher": {
