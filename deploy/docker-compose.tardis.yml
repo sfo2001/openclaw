@@ -13,7 +13,7 @@
 
 services:
   openclaw-gateway:
-    image: localhost:5000/openclaw-hardened:latest
+    image: localhost:5000/openclaw-hardened:lean
     container_name: OpenClaw
     read_only: true
     security_opt:
@@ -25,11 +25,16 @@ services:
         limits:
           cpus: "2"
           memory: 2G
+    env_file: .env
     environment:
       HOME: /home/node
       TERM: xterm-256color
       OPENCLAW_CONFIG_PATH: /config/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
+      # Force IPv4 — Telegram's api.telegram.org currently returns IPv6 only,
+      # but the bridge network is IPv4. Without this Node tries IPv6 first and
+      # the telegram plugin hits 188s polling stalls.
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
     volumes:
       - /mnt/user/appdata/openclaw/home:/home/node
       - /mnt/remotes/192.168.178.71_openclaw:/home/node/clawd
@@ -47,8 +52,12 @@ services:
       - "searxng:host-gateway"
       # Gitea on br0 ipvlan
       - "gitea:192.168.178.3"
+      # Pin Telegram API to IPv4 — bridge net is v4-only, but DNS returns
+      # IPv6 first which undici (used by the telegram plugin) cannot fall
+      # back from, causing 188s polling stalls.
+      - "api.telegram.org:149.154.166.110"
     ports:
       - "18790:18789"
     init: true
     restart: unless-stopped
-    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+    command: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--port", "18789"]
