@@ -1,0 +1,54 @@
+# OpenClaw Tardis lean deploy — no vault sidecar, no autorouter.
+#
+# Replaces deploy/docker-compose.vault.yml. Keeps the read-only / cap-drop
+# hardening from feat/local-hardening; drops the vault internal network and
+# the autorouter host alias. API keys live in agent auth-profiles.json
+# (per-agent) or as plain config strings — your choice when migrating.
+#
+# Usage:
+#   docker compose -f docker-compose.tardis.yml up -d
+#
+# Build:  the image localhost:5000/openclaw-hardened:latest is built from
+# branch deploy/tardis-lean (origin/main + 5 hardening cherry-picks).
+
+services:
+  openclaw-gateway:
+    image: localhost:5000/openclaw-hardened:latest
+    container_name: OpenClaw
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OPENCLAW_CONFIG_PATH: /config/openclaw.json
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+    volumes:
+      - /mnt/user/appdata/openclaw/home:/home/node
+      - /mnt/remotes/192.168.178.71_openclaw:/home/node/clawd
+      - /mnt/user/appdata/openclaw/docs:/home/node/docs:ro
+      - /mnt/user/appdata/openclaw/config:/config
+      # Docker socket intentionally absent — sandbox.mode is "off" in config.
+      # Re-add via tecnativa/docker-socket-proxy if you turn sandbox back on.
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev,mode=1777
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      # Matrix server hosts Ollama at :11434
+      - "matrix:192.168.178.159"
+      # SearXNG container on host bridge (port 8181)
+      - "searxng:host-gateway"
+      # Gitea on br0 ipvlan
+      - "gitea:192.168.178.3"
+    ports:
+      - "18790:18789"
+    init: true
+    restart: unless-stopped
+    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
