@@ -88,16 +88,6 @@
             "maxTokens": 8192
           }
         ]
-      },
-      "nebius": {
-        "baseUrl": "https://api.studio.nebius.ai/v1",
-        "apiKey": "",
-        "api": "openai-completions"
-      },
-      "nvidia": {
-        "baseUrl": "https://integrate.api.nvidia.com/v1",
-        "apiKey": "",
-        "api": "openai-completions"
       }
     }
   },
@@ -117,8 +107,8 @@
         "id": "rag",
         "name": "Seven RAG",
         "model": {
-          "primary": "nvidia/nvidia/nemotron-3-super-120b-a12b",
-          "fallbacks": ["ollama/nemotron-3-super"]
+          "primary": "ollama/qwen3.6:latest-64k",
+          "fallbacks": []
         },
         "workspace": "/home/node/clawd"
       }
@@ -126,40 +116,12 @@
     "defaults": {
       "model": {
         "primary": "ollama/qwen3.6:latest-64k",
-        "fallbacks": [
-          "ollama/nemotron-cascade-2:30b",
-          "nebius/openai/gpt-oss-120b",
-          "nebius/Qwen/Qwen3-235B-A22B-Instruct-2507"
-        ]
+        "fallbacks": []
       },
       "imageModel": {
-        "primary": "ollama/mistral-small3.2-32k"
+        "primary": "ollama/qwen3.6:latest-64k"
       },
       "models": {
-        "nebius/Qwen/Qwen3-235B-A22B-Instruct-2507": {
-          "alias": "nebius"
-        },
-        "nebius/Qwen/Qwen3-235B-A22B-Thinking-2507": {
-          "alias": "nebius-think"
-        },
-        "nebius/openai/gpt-oss-120b": {
-          "alias": "nebius-gpt120b"
-        },
-        "nebius/moonshotai/Kimi-K2.5": {
-          "alias": "nebius-kimi"
-        },
-        "nebius/MiniMaxAI/MiniMax-M2.1": {
-          "alias": "nebius-minimax"
-        },
-        "nebius/zai-org/GLM-4.7-FP8": {
-          "alias": "nebius-glm"
-        },
-        "nebius/meta-llama/Meta-Llama-3.1-8B-Instruct-fast": {
-          "alias": "nebius-llama8b"
-        },
-        "nvidia/nvidia/nemotron-3-super-120b-a12b": {
-          "alias": "nemotron3-super"
-        },
         "ollama/nemotron-3-nano:4b-q8_0": {
           "alias": "fast"
         },
@@ -202,7 +164,7 @@
       },
       "heartbeat": {
         "every": "30m",
-        "model": "ollama/nemotron-cascade-2:30b"
+        "model": "ollama/qwen3.6:latest-64k"
       },
       "maxConcurrent": 4,
       "subagents": {
