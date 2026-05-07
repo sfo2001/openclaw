@@ -2,7 +2,7 @@
 
 Builds on `deploy/tardis-lean`. Adds one sibling service to the compose file
 and one config block to `openclaw.json`. No image rebuild required — the
-whisper container is a stock `ghcr.io/hwdsl2/docker-whisper:latest`.
+whisper container is a stock `hwdsl2/whisper-server:latest` (Docker Hub).
 
 ## What changes
 

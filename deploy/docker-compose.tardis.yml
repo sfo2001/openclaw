@@ -73,7 +73,7 @@ services:
   # in ~800 MB RAM and transcribes a 30 s German clip in ~5–15 s. See
   # README.tardis-whisper.md for the matching openclaw.json patch.
   whisper:
-    image: ghcr.io/hwdsl2/docker-whisper:latest
+    image: hwdsl2/whisper-server:latest
     container_name: whisper
     deploy:
       resources:
