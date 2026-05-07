@@ -61,22 +61,28 @@ needs the same `tools.media.audio` block. Either re-deploy the staged
   "media": {
     "audio": {
       "enabled": true,
+      "echoTranscript": true,
+      "echoFormat": "📝 \"{transcript}\"",
+      "language": "de",
       "models": [
         {
-          "id": "whisper-large-v3-turbo",
-          "transport": "openai-compatible-audio",
-          "request": {
-            "baseUrl": "http://whisper:9000/v1",
-            "endpoint": "/audio/transcriptions",
-            "auth": { "type": "none" }
-          }
+          "provider": "openai",
+          "model": "large-v3-turbo",
+          "baseUrl": "http://whisper:9000/v1"
         }
-      ],
-      "transcriptFormat": "📝 \"{transcript}\""
+      ]
     }
   },
   ...
 }
+```
+
+OpenClaw resolves the `openai` provider's API key via `OPENAI_API_KEY` env
+or `models.providers.openai.apiKey`. whisper-server doesn't validate the
+key, but OpenClaw refuses to call without one — add a dummy to `.env`:
+
+```
+OPENAI_API_KEY=sk-dummy-whisper-noauth
 ```
 
 After config change: `docker compose -f docker-compose.tardis.yml up -d --force-recreate openclaw-gateway`
