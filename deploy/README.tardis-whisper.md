@@ -85,6 +85,29 @@ key, but OpenClaw refuses to call without one — add a dummy to `.env`:
 OPENAI_API_KEY=sk-dummy-whisper-noauth
 ```
 
+Plus: OpenClaw's SSRF guard blocks any request to private IPs by default.
+The whisper container runs at `172.18.0.x` (compose default network), so
+the audio call gets `SsrFBlockedError`. Override per-provider:
+
+```jsonc
+"models": {
+  "providers": {
+    "openai": {
+      "baseUrl": "http://whisper:9000/v1",
+      "apiKey": {"source": "env", "provider": "default", "id": "OPENAI_API_KEY"},
+      "api": "openai-completions",
+      "request": {"allowPrivateNetwork": true},
+      "models": [
+        { "id": "large-v3-turbo", "name": "Whisper Large v3 Turbo", "input": ["audio"] }
+      ]
+    }
+  }
+}
+```
+
+The `models[]` array is required by the provider schema (zod strict-mode);
+a stub entry referencing the whisper model is enough.
+
 After config change: `docker compose -f docker-compose.tardis.yml up -d --force-recreate openclaw-gateway`
 (compose-only edits don't trigger restart on plain `up -d`).
 
