@@ -88,6 +88,25 @@
             "maxTokens": 8192
           }
         ]
+      },
+      "openai": {
+        "baseUrl": "http://whisper:9000/v1",
+        "apiKey": {
+          "source": "env",
+          "provider": "default",
+          "id": "OPENAI_API_KEY"
+        },
+        "api": "openai-completions",
+        "request": {
+          "allowPrivateNetwork": true
+        },
+        "models": [
+          {
+            "id": "large-v3-turbo",
+            "name": "Whisper Large v3 Turbo",
+            "input": ["audio"]
+          }
+        ]
       }
     }
   },
@@ -100,7 +119,7 @@
         "workspace": "/home/node/clawd",
         "identity": {
           "name": "Seven",
-          "emoji": "\ud83d\udef0\ufe0f"
+          "emoji": "🛰️"
         }
       },
       {
