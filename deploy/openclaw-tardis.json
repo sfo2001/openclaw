@@ -238,6 +238,23 @@
         "timeoutSeconds": 30
       }
     },
+    "media": {
+      "audio": {
+        "enabled": true,
+        "models": [
+          {
+            "id": "whisper-large-v3-turbo",
+            "transport": "openai-compatible-audio",
+            "request": {
+              "baseUrl": "http://whisper:9000/v1",
+              "endpoint": "/audio/transcriptions",
+              "auth": { "type": "none" }
+            }
+          }
+        ],
+        "transcriptFormat": "📝 \"{transcript}\""
+      }
+    },
     "elevated": {
       "enabled": true,
       "allowFrom": {
