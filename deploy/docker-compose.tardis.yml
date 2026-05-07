@@ -5,6 +5,11 @@
 # the autorouter host alias. API keys live in agent auth-profiles.json
 # (per-agent) or as plain config strings — your choice when migrating.
 #
+# Adds (feat/tardis-whisper): a sibling `whisper` service running
+# faster-whisper with an OpenAI-compatible audio API for Telegram voice
+# notes. CPU-only on tardis; expects `tools.media.audio` to point at
+# `http://whisper:9000/v1` in openclaw.json. See README.tardis-whisper.md.
+#
 # Usage:
 #   docker compose -f docker-compose.tardis.yml up -d
 #
@@ -61,3 +66,33 @@ services:
     init: true
     restart: unless-stopped
     command: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--port", "18789"]
+    depends_on:
+      - whisper
+
+  # Local STT for Telegram voice notes. CPU-only; large-v3-turbo + int8 fits
+  # in ~800 MB RAM and transcribes a 30 s German clip in ~5–15 s. See
+  # README.tardis-whisper.md for the matching openclaw.json patch.
+  whisper:
+    image: ghcr.io/hwdsl2/docker-whisper:latest
+    container_name: whisper
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 2G
+    environment:
+      WHISPER_MODEL: large-v3-turbo
+      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: int8
+      WHISPER_THREADS: "4"
+      WHISPER_LANGUAGE: de
+      WHISPER_PORT: "9000"
+    volumes:
+      # Persists ~1.5 GB model download across container recreates.
+      - /mnt/user/appdata/whisper/models:/var/lib/whisper
+    # Internal-only by default — OpenClaw reaches it via the compose network
+    # at hostname `whisper`. Uncomment to expose on the LAN.
+    # ports:
+    #   - "9000:9000"
+    init: true
+    restart: unless-stopped
