@@ -241,18 +241,16 @@
     "media": {
       "audio": {
         "enabled": true,
+        "echoTranscript": true,
+        "echoFormat": "📝 \"{transcript}\"",
+        "language": "de",
         "models": [
           {
-            "id": "whisper-large-v3-turbo",
-            "transport": "openai-compatible-audio",
-            "request": {
-              "baseUrl": "http://whisper:9000/v1",
-              "endpoint": "/audio/transcriptions",
-              "auth": { "type": "none" }
-            }
+            "provider": "openai",
+            "model": "large-v3-turbo",
+            "baseUrl": "http://whisper:9000/v1"
           }
-        ],
-        "transcriptFormat": "📝 \"{transcript}\""
+        ]
       }
     },
     "elevated": {
