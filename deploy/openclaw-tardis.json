@@ -90,11 +90,11 @@
         ]
       },
       "openai": {
-        "baseUrl": "http://whisper:9000/v1",
+        "baseUrl": "http://matrix:9000/v1",
         "apiKey": {
           "source": "env",
           "provider": "default",
-          "id": "OPENAI_API_KEY"
+          "id": "MATRIX_WHISPER_API_KEY"
         },
         "api": "openai-completions",
         "request": {
@@ -102,8 +102,8 @@
         },
         "models": [
           {
-            "id": "large-v3-turbo",
-            "name": "Whisper Large v3 Turbo",
+            "id": "Systran/faster-whisper-medium",
+            "name": "Whisper Medium (matrix Speaches)",
             "input": ["audio"]
           }
         ]
@@ -266,8 +266,8 @@
         "models": [
           {
             "provider": "openai",
-            "model": "large-v3-turbo",
-            "baseUrl": "http://whisper:9000/v1"
+            "model": "Systran/faster-whisper-medium",
+            "baseUrl": "http://matrix:9000/v1"
           }
         ]
       }
