@@ -19,6 +19,29 @@ import { createProviderHttpError } from "openclaw/plugin-sdk/provider-http";
 import type { SsrFPolicy } from "openclaw/plugin-sdk/ssrf-runtime";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 
+const DANGEROUS_HEADER_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function sanitizeHeaders(
+  ...sources: Array<Record<string, unknown> | undefined>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const source of sources) {
+    if (!source || typeof source !== "object") {
+      continue;
+    }
+    for (const key of Object.keys(source)) {
+      if (DANGEROUS_HEADER_KEYS.has(key)) {
+        continue;
+      }
+      const value = source[key];
+      if (typeof value === "string") {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
 export type GeminiEmbeddingClient = {
   baseUrl: string;
   headers: Record<string, string>;
@@ -331,7 +354,7 @@ async function resolveGeminiEmbeddingClient(
     DEFAULT_GOOGLE_API_BASE_URL;
   const baseUrl = normalizeGeminiBaseUrl(rawBaseUrl);
   const ssrfPolicy = buildRemoteBaseUrlPolicy(baseUrl);
-  const headerOverrides = Object.assign({}, providerConfig?.headers, remote?.headers);
+  const headerOverrides = sanitizeHeaders(providerConfig?.headers, remote?.headers);
   const headers: Record<string, string> = {
     ...headerOverrides,
   };

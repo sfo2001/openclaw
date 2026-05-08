@@ -5,6 +5,29 @@ import { resolveMemorySecretInputString } from "./secret-input.js";
 import type { SsrFPolicy } from "./ssrf-policy.js";
 import { normalizeOptionalString } from "./string-utils.js";
 
+const DANGEROUS_HEADER_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function sanitizeHeaders(
+  ...sources: Array<Record<string, unknown> | undefined>
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const source of sources) {
+    if (!source || typeof source !== "object") {
+      continue;
+    }
+    for (const key of Object.keys(source)) {
+      if (DANGEROUS_HEADER_KEYS.has(key)) {
+        continue;
+      }
+      const value = source[key];
+      if (typeof value === "string") {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
 export type RemoteEmbeddingProviderId = string;
 
 function resolveOpenClawAttributionHeaders(): Record<string, string> {
@@ -51,7 +74,7 @@ export async function resolveRemoteEmbeddingBearerClient(params: {
       );
   const baseUrl =
     remoteBaseUrl || normalizeOptionalString(providerConfig?.baseUrl) || params.defaultBaseUrl;
-  const headerOverrides = Object.assign({}, providerConfig?.headers, remote?.headers);
+  const headerOverrides = sanitizeHeaders(providerConfig?.headers, remote?.headers);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${apiKey}`,
