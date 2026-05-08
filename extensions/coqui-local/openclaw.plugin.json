@@ -1,0 +1,11 @@
+{
+  "id": "coqui-local",
+  "contracts": {
+    "speechProviders": ["coqui-local"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
