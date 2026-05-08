@@ -281,7 +281,19 @@
     }
   },
   "messages": {
-    "ackReactionScope": "group-mentions"
+    "ackReactionScope": "group-mentions",
+    "tts": {
+      "provider": "coqui-local",
+      "providers": {
+        "coqui-local": {
+          "baseUrl": "http://matrix:8765",
+          "language": "de",
+          "voice": "daisy",
+          "speed": 1.0,
+          "format": "wav"
+        }
+      }
+    }
   },
   "commands": {
     "native": "auto",
