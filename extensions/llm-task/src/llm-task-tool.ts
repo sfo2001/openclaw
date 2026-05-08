@@ -178,7 +178,7 @@ export function createLlmTaskTool(api: OpenClawPluginApi) {
         (typeof pluginCfg.timeoutMs === "number" && pluginCfg.timeoutMs > 0
           ? pluginCfg.timeoutMs
           : undefined) ||
-        30_000;
+        120_000;
 
       const streamParams = {
         temperature: typeof params.temperature === "number" ? params.temperature : undefined,
