@@ -5,6 +5,12 @@
 # the autorouter host alias. API keys live in agent auth-profiles.json
 # (per-agent) or as plain config strings — your choice when migrating.
 #
+# STT (feat/tardis-whisper): the Whisper service runs on **matrix** at
+# matrix:9000 (provisioned by ~/devel/matrix-server-toolkit `matrix-whisper`).
+# OpenClaw reaches it cross-host via the existing `matrix:192.168.178.159`
+# extra_hosts entry, with Bearer auth from `MATRIX_WHISPER_API_KEY` in .env.
+# No tardis-side Whisper container.  See README.tardis-whisper.md.
+#
 # Usage:
 #   docker compose -f docker-compose.tardis.yml up -d
 #
