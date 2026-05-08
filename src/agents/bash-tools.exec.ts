@@ -70,6 +70,8 @@ export type {
   ExecToolDefaults,
   ExecToolDetails,
 } from "./bash-tools.exec-types.js";
+import { extractCdPrefix } from "./bash-tools.exec-cd-prefix.js";
+export { extractCdPrefix } from "./bash-tools.exec-cd-prefix.js";
 
 function buildExecForegroundResult(params: {
   outcome: ExecProcessOutcome;
@@ -1238,7 +1240,7 @@ export function createExecTool(
     },
     parameters: execSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
-      const params = args as {
+      let params = args as {
         command: string;
         workdir?: string;
         env?: Record<string, string>;
@@ -1401,6 +1403,17 @@ export function createExecTool(
       } else {
         const rawWorkdir = explicitWorkdir ?? defaultWorkdir ?? process.cwd();
         workdir = resolveWorkdir(rawWorkdir, warnings);
+      }
+      // Runtime cd-prefix extraction: rewrite `cd /path && cmd` into workdir + cmd
+      // so the allowlist evaluates the real command, not the shell builtin.
+      const cdExtraction = extractCdPrefix(params.command, explicitWorkdir);
+      if (cdExtraction) {
+        logInfo("exec: extracted cd prefix into workdir (model used cd /path && cmd pattern)");
+        params = { ...params, command: cdExtraction.command };
+        const resolvedCdWorkdir = path.isAbsolute(cdExtraction.workdir)
+          ? cdExtraction.workdir
+          : path.resolve(workdir ?? process.cwd(), cdExtraction.workdir);
+        workdir = resolveWorkdir(resolvedCdWorkdir, warnings);
       }
       rejectUnsafeControlShellCommand(params.command);
 
