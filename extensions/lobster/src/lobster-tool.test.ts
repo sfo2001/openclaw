@@ -248,7 +248,7 @@ describe("lobster plugin tool", () => {
       approvalId: "approval-1",
       approve: true,
       cwd: process.cwd(),
-      timeoutMs: 20_000,
+      timeoutMs: 300_000,
       maxStdoutBytes: 512_000,
     });
     expect(res.details).toMatchObject({
