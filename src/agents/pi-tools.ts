@@ -368,6 +368,10 @@ export function createOpenClawCodingTools(options?: {
   recordToolPrepStage?: (name: string) => void;
   /** Live observer called after wrapped tool outcomes are recorded. */
   onToolOutcome?: ToolOutcomeObserver;
+  /** Hard cap on tool calls per session. When exceeded, the session is aborted. */
+  maxToolCalls?: number;
+  /** Callback invoked when the hard tool-call cap is reached. */
+  onMaxToolCallsReached?: () => void;
 }): AnyAgentTool[] {
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
@@ -834,6 +838,12 @@ export function createOpenClawCodingTools(options?: {
     }),
   );
   options?.recordToolPrepStage?.("schema-normalization");
+  const resolvedLoopDetection = resolveToolLoopDetectionConfig({ cfg: options?.config, agentId });
+  // When a hard tool-call cap is set, force loop detection enabled so the model
+  // gets softer pattern-based warnings before the hard cap fires.
+  if (options?.maxToolCalls && resolvedLoopDetection && !resolvedLoopDetection.enabled) {
+    resolvedLoopDetection.enabled = true;
+  }
   const withHooks = normalized.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, {
       agentId,
@@ -842,8 +852,10 @@ export function createOpenClawCodingTools(options?: {
       sessionId: options?.sessionId,
       runId: options?.runId,
       ...(options?.trace ? { trace: options.trace } : {}),
-      loopDetection: resolveToolLoopDetectionConfig({ cfg: options?.config, agentId }),
+      loopDetection: resolvedLoopDetection,
       onToolOutcome: options?.onToolOutcome,
+      maxToolCalls: options?.maxToolCalls,
+      onMaxToolCallsReached: options?.onMaxToolCallsReached,
     }),
   );
   options?.recordToolPrepStage?.("tool-hooks");

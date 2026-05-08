@@ -48,6 +48,8 @@ export type HookContext = {
   trace?: DiagnosticTraceContext;
   loopDetection?: ToolLoopDetectionConfig;
   onToolOutcome?: ToolOutcomeObserver;
+  maxToolCalls?: number;
+  onMaxToolCallsReached?: () => void;
 };
 
 type HookBlockedKind = "veto" | "failure";
@@ -354,6 +356,17 @@ function summarizeToolParams(params: unknown): DiagnosticToolParamsSummary {
   return { kind: "other" };
 }
 
+// Use Symbol.for + globalThis to share state across module instances (tsdown + jiti duplication).
+// Same pattern as src/plugins/runtime.ts plugin registry.
+const TOOL_CALL_COUNTS_KEY = Symbol.for("openclaw:toolCallCountsBySession");
+const toolCallCountsBySession: Map<string, number> =
+  ((globalThis as Record<symbol, unknown>)[TOOL_CALL_COUNTS_KEY] as Map<string, number>) ??
+  (() => {
+    const m = new Map<string, number>();
+    (globalThis as Record<symbol, unknown>)[TOOL_CALL_COUNTS_KEY] = m;
+    return m;
+  })();
+
 function shouldEmitLoopWarning(state: SessionState, warningKey: string, count: number): boolean {
   if (!state.toolLoopWarningBuckets) {
     state.toolLoopWarningBuckets = new Map();
@@ -425,6 +438,22 @@ export async function runBeforeToolCallHook(args: {
 }): Promise<HookOutcome> {
   const toolName = normalizeToolName(args.toolName || "tool");
   const params = args.params;
+
+  // Hard tool-call cap: per-session counter that aborts the run when exceeded.
+  if (args.ctx?.maxToolCalls && args.ctx.sessionKey) {
+    const count = (toolCallCountsBySession.get(args.ctx.sessionKey) ?? 0) + 1;
+    toolCallCountsBySession.set(args.ctx.sessionKey, count);
+    if (count > args.ctx.maxToolCalls) {
+      log.error(
+        `Hard tool-call cap reached: session=${args.ctx.sessionKey} count=${count} max=${args.ctx.maxToolCalls}`,
+      );
+      args.ctx.onMaxToolCallsReached?.();
+      return {
+        blocked: true,
+        reason: `Tool call limit exceeded (${args.ctx.maxToolCalls}). Session aborted.`,
+      };
+    }
+  }
 
   if (args.ctx?.sessionKey) {
     const { getDiagnosticSessionState, logToolLoopAction, detectToolCallLoop, recordToolCall } =
@@ -758,6 +787,10 @@ export function consumeAdjustedParamsForToolCall(toolCallId: string, runId?: str
   return params;
 }
 
+export function resetToolCallCounter(sessionKey: string): void {
+  toolCallCountsBySession.delete(sessionKey);
+}
+
 export const __testing = {
   BEFORE_TOOL_CALL_WRAPPED,
   buildAdjustedParamsKey,
@@ -765,4 +798,6 @@ export const __testing = {
   runBeforeToolCallHook,
   mergeParamsWithApprovalOverrides,
   isPlainObject,
+  toolCallCountsBySession,
+  resetToolCallCounter,
 };

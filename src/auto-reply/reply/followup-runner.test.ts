@@ -1668,3 +1668,49 @@ describe("createFollowupRunner agentDir forwarding", () => {
     expect(call?.agentDir).toBe(agentDir);
   });
 });
+
+describe("createFollowupRunner maxToolCalls plumbing", () => {
+  beforeEach(() => {
+    runEmbeddedPiAgentMock.mockClear();
+  });
+
+  it("passes maxToolCalls from opts to runEmbeddedPiAgent", async () => {
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "done" }],
+      meta: {},
+    });
+
+    const runner = createFollowupRunner({
+      opts: { maxToolCalls: 25 },
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "anthropic/claude-opus-4-5",
+    });
+
+    await runner(baseQueuedRun());
+
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    const params = runEmbeddedPiAgentMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.maxToolCalls).toBe(25);
+  });
+
+  it("omits maxToolCalls when not set in opts", async () => {
+    runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "done" }],
+      meta: {},
+    });
+
+    const runner = createFollowupRunner({
+      opts: {},
+      typing: createMockTypingController(),
+      typingMode: "instant",
+      defaultModel: "anthropic/claude-opus-4-5",
+    });
+
+    await runner(baseQueuedRun());
+
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    const params = runEmbeddedPiAgentMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params.maxToolCalls).toBeUndefined();
+  });
+});
