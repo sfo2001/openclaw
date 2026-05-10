@@ -294,7 +294,7 @@
         "coqui-local": {
           "baseUrl": "http://matrix:8765",
           "language": "de",
-          "voice": "henriette",
+          "voice": "nova",
           "speed": 1.0,
           "format": "wav"
         }
@@ -307,7 +307,7 @@
           "fallbackPolicy": "preserve-persona",
           "providers": {
             "coqui-local": {
-              "voice": "henriette",
+              "voice": "nova",
               "speed": 1.0,
               "language": "de",
               "format": "wav"
