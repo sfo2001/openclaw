@@ -283,14 +283,36 @@
   "messages": {
     "ackReactionScope": "group-mentions",
     "tts": {
+      "auto": "inbound",
       "provider": "coqui-local",
+      "persona": "seven",
+      "modelOverrides": {
+        "enabled": true,
+        "allowVoice": true
+      },
       "providers": {
         "coqui-local": {
           "baseUrl": "http://matrix:8765",
           "language": "de",
-          "voice": "daisy",
+          "voice": "henriette",
           "speed": 1.0,
           "format": "wav"
+        }
+      },
+      "personas": {
+        "seven": {
+          "label": "Seven",
+          "description": "German narrator voice for the Seven bot persona.",
+          "provider": "coqui-local",
+          "fallbackPolicy": "preserve-persona",
+          "providers": {
+            "coqui-local": {
+              "voice": "henriette",
+              "speed": 1.0,
+              "language": "de",
+              "format": "wav"
+            }
+          }
         }
       }
     }
@@ -405,6 +427,9 @@
   "plugins": {
     "entries": {
       "telegram": {
+        "enabled": true
+      },
+      "coqui-local": {
         "enabled": true
       },
       "lobster": {
