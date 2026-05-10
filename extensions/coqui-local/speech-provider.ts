@@ -131,7 +131,7 @@ async function fetchAudio(
   baseUrl: string,
   body: Record<string, unknown>,
   timeoutMs: number | undefined,
-): Promise<{ audioBuffer: ArrayBuffer; outputFormat: "wav" | "mp3" }> {
+): Promise<{ audioBuffer: Buffer; outputFormat: "wav" | "mp3" }> {
   const url = `${baseUrl}/tts`;
   const { response, release } = await fetchWithSsrFGuard({
     url,
@@ -146,7 +146,7 @@ async function fetchAudio(
   });
   try {
     await assertOkOrThrowProviderError(response, "coqui-local TTS error");
-    const audioBuffer = await response.arrayBuffer();
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
     const outputFormat = body.format === "mp3" ? "mp3" : "wav";
     return { audioBuffer, outputFormat };
   } finally {
