@@ -1,7 +1,7 @@
 {
   "meta": {
-    "lastTouchedVersion": "2026.5.27-lean-coqui",
-    "lastTouchedAt": "2026-05-29T19:34:00.000Z"
+    "lastTouchedVersion": "2026.5.27-lean-piper-restore",
+    "lastTouchedAt": "2026-05-29T20:32:00.000Z"
   },
   "wizard": {
     "lastRunAt": "2026-02-22T18:04:21.644Z",
@@ -289,9 +289,9 @@
     ],
     "defaults": {
       "model": {
-        "primary": "ollama/qwen3.6:latest-64k",
+        "primary": "nebius/openai/gpt-oss-120b",
         "fallbacks": [
-          "nebius/openai/gpt-oss-120b"
+          "ollama/qwen3.6:latest-64k"
         ]
       },
       "imageModel": {
@@ -487,14 +487,14 @@
       "provider": "coqui-local",
       "providers": {
         "coqui-local": {
-          "baseUrl": "http://matrix:8765",
-          "language": "de",
-          "voice": "nova",
+          "baseUrl": "http://host.docker.internal:8765",
+          "language": "en",
+          "voice": "en_US-lessac-medium",
           "speed": 1,
-          "format": "wav"
+          "format": "mp3"
         }
       },
-      "auto": "tagged",
+      "auto": "inbound",
       "modelOverrides": {
         "enabled": true,
         "allowVoice": true
@@ -508,10 +508,10 @@
           "fallbackPolicy": "preserve-persona",
           "providers": {
             "coqui-local": {
-              "voice": "nova",
+              "voice": "en_US-lessac-medium",
               "speed": 1,
-              "language": "de",
-              "format": "wav"
+              "language": "en",
+              "format": "mp3"
             }
           }
         }
