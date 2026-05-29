@@ -1,7 +1,7 @@
 {
   "meta": {
-    "lastTouchedVersion": "2026.4.29-lean",
-    "lastTouchedAt": "2026-05-01T15:30:00.000Z"
+    "lastTouchedVersion": "2026.5.27-lean-coqui",
+    "lastTouchedAt": "2026-05-29T19:34:00.000Z"
   },
   "wizard": {
     "lastRunAt": "2026-02-22T18:04:21.644Z",
@@ -13,7 +13,7 @@
     "mode": "replace",
     "providers": {
       "ollama": {
-        "baseUrl": "http://matrix:11434/v1",
+        "baseUrl": "http://192.168.178.159:11434/v1",
         "apiKey": "ollama-local",
         "api": "openai-completions",
         "models": [
@@ -21,7 +21,10 @@
             "id": "mistral-small3.2-32k",
             "name": "Mistral Small 3.2 (32K, Multimodal)",
             "reasoning": false,
-            "input": ["text", "image"],
+            "input": [
+              "text",
+              "image"
+            ],
             "cost": {
               "input": 0,
               "output": 0,
@@ -35,7 +38,9 @@
             "id": "cogito-64k",
             "name": "Cogito 32B (64K ctx)",
             "reasoning": false,
-            "input": ["text"],
+            "input": [
+              "text"
+            ],
             "cost": {
               "input": 0,
               "output": 0,
@@ -49,7 +54,9 @@
             "id": "devstral-small-official-128k",
             "name": "Devstral Small 128K",
             "reasoning": false,
-            "input": ["text"],
+            "input": [
+              "text"
+            ],
             "cost": {
               "input": 0,
               "output": 0,
@@ -63,7 +70,9 @@
             "id": "cogito:32b",
             "name": "Cogito 32B",
             "reasoning": false,
-            "input": ["text"],
+            "input": [
+              "text"
+            ],
             "cost": {
               "input": 0,
               "output": 0,
@@ -77,7 +86,9 @@
             "id": "deepseek-r1:14b",
             "name": "DeepSeek R1 14B",
             "reasoning": true,
-            "input": ["text"],
+            "input": [
+              "text"
+            ],
             "cost": {
               "input": 0,
               "output": 0,
@@ -87,10 +98,152 @@
             "contextWindow": 64000,
             "maxTokens": 8192
           }
+        ],
+        "timeoutSeconds": 1800
+      },
+      "nvidia": {
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "apiKey": {
+          "source": "env",
+          "provider": "default",
+          "id": "NVIDIA_API_KEY"
+        },
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "minimaxai/minimax-m2.7",
+            "name": "MiniMax M2.7 (NVIDIA)",
+            "contextWindow": 204800
+          },
+          {
+            "id": "z-ai/glm4.7",
+            "name": "GLM 4.7 (NVIDIA)",
+            "contextWindow": 131072
+          }
+        ]
+      },
+      "nebius": {
+        "baseUrl": "https://api.tokenfactory.nebius.com/v1",
+        "apiKey": {
+          "source": "env",
+          "provider": "default",
+          "id": "NEBIUS_API_KEY"
+        },
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "openai/gpt-oss-120b",
+            "name": "gpt-oss 120B",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 131072,
+            "maxTokens": 16384,
+            "cost": {
+              "input": 0.15,
+              "output": 0.6
+            }
+          },
+          {
+            "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+            "name": "Qwen3 235B",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 262144,
+            "maxTokens": 8192,
+            "cost": {
+              "input": 0.2,
+              "output": 0.6
+            }
+          },
+          {
+            "id": "moonshotai/Kimi-K2.5",
+            "name": "Kimi K2.5",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 262144,
+            "maxTokens": 8192,
+            "cost": {
+              "input": 0.5,
+              "output": 2.5
+            }
+          },
+          {
+            "id": "MiniMaxAI/MiniMax-M2.5",
+            "name": "MiniMax M2.5",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 196608,
+            "maxTokens": 8192,
+            "cost": {
+              "input": 0.3,
+              "output": 1.2
+            }
+          }
+        ],
+        "timeoutSeconds": 240
+      },
+      "autorouter": {
+        "baseUrl": "http://host.docker.internal:4000/v1",
+        "apiKey": "sk-autorouter-local",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "fast",
+            "name": "Local fast",
+            "contextWindow": 32768,
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          {
+            "id": "complex",
+            "name": "Local complex",
+            "contextWindow": 65536,
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          {
+            "id": "compaction-local",
+            "name": "Local compaction",
+            "contextWindow": 131072,
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          {
+            "id": "coding-light",
+            "name": "Local long-ctx",
+            "contextWindow": 131072,
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          {
+            "id": "vision",
+            "name": "Local vision",
+            "contextWindow": 32768,
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          }
         ]
       },
       "openai": {
-        "baseUrl": "http://matrix:9000/v1",
+        "baseUrl": "http://host.docker.internal:9100/v1",
         "apiKey": {
           "source": "env",
           "provider": "default",
@@ -104,7 +257,9 @@
           {
             "id": "Systran/faster-whisper-medium",
             "name": "Whisper Medium (matrix Speaches)",
-            "input": ["audio"]
+            "input": [
+              "audio"
+            ]
           }
         ]
       }
@@ -119,7 +274,7 @@
         "workspace": "/home/node/clawd",
         "identity": {
           "name": "Seven",
-          "emoji": "🛰️"
+          "emoji": "\ud83d\udef0\ufe0f"
         }
       },
       {
@@ -134,8 +289,10 @@
     ],
     "defaults": {
       "model": {
-        "primary": "ollama/qwen3.6:latest-64k",
-        "fallbacks": []
+        "primary": "nebius/openai/gpt-oss-120b",
+        "fallbacks": [
+          "ollama/qwen3.6:latest-64k"
+        ]
       },
       "imageModel": {
         "primary": "ollama/qwen3.6:latest-64k"
@@ -164,6 +321,27 @@
         },
         "ollama/qwen3.5:9b": {
           "alias": "vision"
+        },
+        "nvidia/minimaxai/minimax-m2.7": {
+          "alias": "minimax"
+        },
+        "nvidia/z-ai/glm4.7": {
+          "alias": "glm"
+        },
+        "autorouter/compaction-local": {
+          "alias": "compaction"
+        },
+        "nebius/openai/gpt-oss-120b": {
+          "alias": "chat"
+        },
+        "nebius/Qwen/Qwen3-235B-A22B-Instruct-2507": {
+          "alias": "qwen"
+        },
+        "nebius/moonshotai/Kimi-K2.5": {
+          "alias": "kimi"
+        },
+        "nebius/MiniMaxAI/MiniMax-M2.5": {
+          "alias": "minimax-25"
         }
       },
       "workspace": "/home/node/clawd",
@@ -179,11 +357,23 @@
         "model": "nomic-embed-text"
       },
       "compaction": {
-        "mode": "safeguard"
+        "mode": "safeguard",
+        "model": "autorouter/compaction-local",
+        "memoryFlush": {
+          "model": "autorouter/fast"
+        }
       },
       "heartbeat": {
         "every": "30m",
-        "model": "ollama/qwen3.6:latest-64k"
+        "model": "ollama/qwen3.6:latest-64k",
+        "lightContext": true,
+        "isolatedSession": true,
+        "activeHours": {
+          "start": "04:00",
+          "end": "24:00"
+        },
+        "target": "telegram",
+        "to": "-1003811594083:topic:95"
       },
       "maxConcurrent": 4,
       "subagents": {
@@ -202,7 +392,9 @@
             "/run:size=16m,noexec,nosuid,nodev"
           ],
           "network": "none",
-          "capDrop": ["ALL"],
+          "capDrop": [
+            "ALL"
+          ],
           "pidsLimit": 64,
           "memory": "512m",
           "memorySwap": "512m",
@@ -225,7 +417,8 @@
           "idleHours": 1,
           "maxAgeDays": 1
         }
-      }
+      },
+      "skipBootstrap": true
     }
   },
   "tools": {
@@ -244,7 +437,10 @@
       "llm-task",
       "lobster"
     ],
-    "deny": ["browser", "gateway"],
+    "deny": [
+      "browser",
+      "gateway"
+    ],
     "web": {
       "search": {
         "enabled": true,
@@ -257,48 +453,52 @@
         "timeoutSeconds": 30
       }
     },
+    "elevated": {
+      "enabled": true,
+      "allowFrom": {
+        "webchat": [
+          "*"
+        ],
+        "telegram": [
+          845094732
+        ]
+      }
+    },
     "media": {
       "audio": {
         "enabled": true,
         "echoTranscript": true,
-        "echoFormat": "📝 \"{transcript}\"",
+        "echoFormat": "\ud83d\udcdd \"{transcript}\"",
         "language": "de",
         "models": [
           {
             "provider": "openai",
             "model": "Systran/faster-whisper-medium",
-            "baseUrl": "http://matrix:9000/v1"
+            "baseUrl": "http://host.docker.internal:9100/v1"
           }
         ]
-      }
-    },
-    "elevated": {
-      "enabled": true,
-      "allowFrom": {
-        "webchat": ["*"],
-        "telegram": [845094732]
       }
     }
   },
   "messages": {
     "ackReactionScope": "group-mentions",
     "tts": {
-      "auto": "inbound",
       "provider": "coqui-local",
-      "persona": "seven",
-      "modelOverrides": {
-        "enabled": true,
-        "allowVoice": true
-      },
       "providers": {
         "coqui-local": {
           "baseUrl": "http://matrix:8765",
           "language": "de",
           "voice": "nova",
-          "speed": 1.0,
+          "speed": 1,
           "format": "wav"
         }
       },
+      "auto": "inbound",
+      "modelOverrides": {
+        "enabled": true,
+        "allowVoice": true
+      },
+      "persona": "seven",
       "personas": {
         "seven": {
           "label": "Seven",
@@ -308,26 +508,32 @@
           "providers": {
             "coqui-local": {
               "voice": "nova",
-              "speed": 1.0,
+              "speed": 1,
               "language": "de",
               "format": "wav"
             }
           }
         }
-      }
+      },
+      "timeoutMs": 60000
     }
   },
   "commands": {
     "native": "auto",
     "nativeSkills": "auto",
     "restart": true,
-    "ownerDisplay": "raw"
+    "ownerDisplay": "raw",
+    "ownerAllowFrom": [
+      "telegram:845094732"
+    ]
   },
   "approvals": {
     "exec": {
       "enabled": true,
       "mode": "both",
-      "agentFilter": ["main"],
+      "agentFilter": [
+        "main"
+      ],
       "targets": [
         {
           "channel": "telegram",
@@ -357,7 +563,9 @@
       "enabled": true,
       "execApprovals": {
         "enabled": true,
-        "approvers": [845094732],
+        "approvers": [
+          845094732
+        ],
         "target": "channel"
       },
       "dmPolicy": "pairing",
@@ -375,9 +583,19 @@
               "agentId": "rag"
             }
           },
-          "allowFrom": [845094732]
+          "allowFrom": [
+            845094732
+          ]
         }
-      }
+      },
+      "botToken": {
+        "source": "env",
+        "id": "TELEGRAM_BOT_TOKEN",
+        "provider": "default"
+      },
+      "groupAllowFrom": [
+        845094732
+      ]
     }
   },
   "gateway": {
@@ -407,10 +625,9 @@
     },
     "entries": {
       "homeassistant": {
-        "enabled": false,
+        "enabled": true,
         "env": {
-          "HA_URL": "http://homeassistant.local:8123",
-          "HA_TOKEN": ""
+          "HA_URL": "http://homeassistant.local:8123"
         }
       },
       "deep-researcher": {
@@ -421,15 +638,20 @@
       },
       "ad-cutter": {
         "enabled": true
+      },
+      "lwt": {
+        "enabled": true
       }
+    },
+    "load": {
+      "extraDirs": [
+        "/home/node/clawd/openclaw-skills/skills"
+      ]
     }
   },
   "plugins": {
     "entries": {
       "telegram": {
-        "enabled": true
-      },
-      "coqui-local": {
         "enabled": true
       },
       "lobster": {
@@ -456,7 +678,49 @@
       },
       "nvidia": {
         "enabled": true
+      },
+      "ollama": {
+        "enabled": true
+      },
+      "memory-core": {
+        "config": {
+          "dreaming": {
+            "enabled": true
+          }
+        },
+        "enabled": true
+      },
+      "coqui-local": {
+        "enabled": true
+      },
+      "toolcall-cap": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "maxPerRun": 50,
+          "scope": "run"
+        },
+        "hooks": {
+          "allowConversationAccess": true
+        }
       }
+    },
+    "allow": [
+      "telegram",
+      "searxng",
+      "ollama",
+      "memory-core",
+      "nvidia",
+      "coqui-local"
+    ],
+    "load": {
+      "paths": [
+        "/home/node/openclaw-plugin-toolcall-cap"
+      ]
     }
+  },
+  "logging": {
+    "level": "info",
+    "consoleLevel": "info"
   }
 }

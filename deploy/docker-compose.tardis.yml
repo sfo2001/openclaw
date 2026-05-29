@@ -1,20 +1,22 @@
-# OpenClaw Tardis lean deploy — no vault sidecar, no autorouter.
+# OpenClaw Tardis lean deploy — no vault sidecar, no autorouter container.
 #
 # Replaces deploy/docker-compose.vault.yml. Keeps the read-only / cap-drop
 # hardening from feat/local-hardening; drops the vault internal network and
-# the autorouter host alias. API keys live in agent auth-profiles.json
-# (per-agent) or as plain config strings — your choice when migrating.
+# the autorouter sidecar (autorouter now runs as a separate container on
+# tardis host:4000, reached via host.docker.internal).
 #
-# Adds (feat/tardis-whisper): a sibling `whisper` service running
-# faster-whisper with an OpenAI-compatible audio API for Telegram voice
-# notes. CPU-only on tardis; expects `tools.media.audio` to point at
-# `http://whisper:9000/v1` in openclaw.json. See README.tardis-whisper.md.
+# STT (feat/tardis-whisper rework): no tardis-side Whisper container. The
+# Whisper service is reached at host.docker.internal:9100 from the OpenClaw
+# container (host-level forwarder configured outside this compose file).
+# Earlier iterations ran a sibling `whisper` sidecar locally — dropped
+# because routing via host.docker.internal is what the live deployment uses.
 #
 # Usage:
 #   docker compose -f docker-compose.tardis.yml up -d
 #
-# Build:  the image localhost:5000/openclaw-hardened:latest is built from
-# branch deploy/tardis-lean (origin/main + 5 hardening cherry-picks).
+# Build:  the image localhost:5000/openclaw-hardened:lean is built from
+# branch deploy/tardis-lean-v2026.5.12 (v2026.5.12 + 3 hardening cherry-picks
+# + 5 merges from feat/* branches + plugin wiring).
 
 services:
   openclaw-gateway:
@@ -36,6 +38,7 @@ services:
       TERM: xterm-256color
       OPENCLAW_CONFIG_PATH: /config/openclaw.json
       OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_LOG_LEVEL: debug
       # Force IPv4 — Telegram's api.telegram.org currently returns IPv6 only,
       # but the bridge network is IPv4. Without this Node tries IPv6 first and
       # the telegram plugin hits 188s polling stalls.
@@ -45,6 +48,10 @@ services:
       - /mnt/remotes/192.168.178.71_openclaw:/home/node/clawd
       - /mnt/user/appdata/openclaw/docs:/home/node/docs:ro
       - /mnt/user/appdata/openclaw/config:/config
+      # Out-of-tree workspace plugin: caps tool calls per run. Replaces the
+      # in-tree fix/heartbeat patch that was dropped at v2026.5.12.
+      # Source synced from gallifrey to tardis appdata at deploy time.
+      - /mnt/user/appdata/openclaw-plugin-toolcall-cap:/home/node/openclaw-plugin-toolcall-cap:ro
       # Docker socket intentionally absent — sandbox.mode is "off" in config.
       # Re-add via tecnativa/docker-socket-proxy if you turn sandbox back on.
     tmpfs:
@@ -66,33 +73,3 @@ services:
     init: true
     restart: unless-stopped
     command: ["node", "openclaw.mjs", "gateway", "--bind", "lan", "--port", "18789"]
-    depends_on:
-      - whisper
-
-  # Local STT for Telegram voice notes. CPU-only; large-v3-turbo + int8 fits
-  # in ~800 MB RAM and transcribes a 30 s German clip in ~5–15 s. See
-  # README.tardis-whisper.md for the matching openclaw.json patch.
-  whisper:
-    image: hwdsl2/whisper-server:latest
-    container_name: whisper
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 2G
-    environment:
-      WHISPER_MODEL: large-v3-turbo
-      WHISPER_DEVICE: cpu
-      WHISPER_COMPUTE_TYPE: int8
-      WHISPER_THREADS: "4"
-      WHISPER_LANGUAGE: de
-      WHISPER_PORT: "9000"
-    volumes:
-      # Persists ~1.5 GB model download across container recreates.
-      - /mnt/user/appdata/whisper/models:/var/lib/whisper
-    # Internal-only by default — OpenClaw reaches it via the compose network
-    # at hostname `whisper`. Uncomment to expose on the LAN.
-    # ports:
-    #   - "9000:9000"
-    init: true
-    restart: unless-stopped
