@@ -494,7 +494,7 @@
           "format": "wav"
         }
       },
-      "auto": "inbound",
+      "auto": "tagged",
       "modelOverrides": {
         "enabled": true,
         "allowVoice": true
