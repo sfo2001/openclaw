@@ -429,6 +429,7 @@
       "web_search",
       "web_fetch",
       "image",
+      "tts",
       "memory_search",
       "memory_get",
       "exec",
