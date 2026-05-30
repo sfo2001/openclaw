@@ -289,9 +289,9 @@
     ],
     "defaults": {
       "model": {
-        "primary": "nebius/openai/gpt-oss-120b",
+        "primary": "ollama/qwen3.6:latest-64k",
         "fallbacks": [
-          "ollama/qwen3.6:latest-64k"
+          "nebius/openai/gpt-oss-120b"
         ]
       },
       "imageModel": {
